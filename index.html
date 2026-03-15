@@ -783,7 +783,7 @@
     $('scanBtn').disabled = !(apiReady && probeEncoding && accessToken && driveFiles.length > 0);
   }
 
-  // ── API HEALTH CHECK ──
+  // ── API HEALTH CHECK + WARMUP ──
   async function initAPI() {
     chip('modelDot', 'modelMsg', 'Connecting to scan server…', 'amber');
     try {
@@ -796,7 +796,7 @@
       } else throw new Error('not ok');
     } catch(e) {
       chip('modelDot', 'modelMsg', 'Server offline — retrying…', 'red');
-      setTimeout(initAPI, 5000); // retry every 5s (Render cold start)
+      setTimeout(initAPI, 5000);
     }
   }
 
@@ -1067,20 +1067,39 @@
     $('statMatched').textContent = '0';
     setProg(0); matchResults = [];
     initResultsArea();
-    chip('scanDot', 'scanMsg', 'Sending to scan server…', 'amber');
+    chip('scanDot', 'scanMsg', 'Connecting to scan server…', 'amber');
+
+    // Stall detector — if no data for 30s, show warning
+    let lastDataTime = Date.now();
+    const stallCheck = setInterval(() => {
+      if (!scanRunning) { clearInterval(stallCheck); return; }
+      const stalled = (Date.now() - lastDataTime) / 1000;
+      if (stalled > 30) chip('scanDot', 'scanMsg', `No response for ${Math.round(stalled)}s — server may be restarting…`, 'amber');
+    }, 5000);
 
     try {
+      const payload = {
+        encoding: probeEncoding,
+        files: driveFiles.map(f => ({ id: f.id, name: f.name })),
+        access_token: accessToken,
+        threshold
+      };
+
       const r = await fetch(`${API_URL}/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          encoding: probeEncoding,
-          files: driveFiles.map(f => ({ id: f.id, name: f.name, thumbnailLink: f.thumbnailLink || null })),
-          access_token: accessToken,
-          threshold
-        }),
+        body: JSON.stringify(payload),
         signal: scanController.signal
       });
+
+      if (!r.ok) {
+        const err = await r.text();
+        chip('scanDot', 'scanMsg', `Server error ${r.status}: ${err}`, 'red');
+        clearInterval(stallCheck);
+        resetScanBtn(); return;
+      }
+
+      chip('scanDot', 'scanMsg', 'Scanning…', 'blue');
 
       const reader = r.body.getReader();
       const decoder = new TextDecoder();
@@ -1091,6 +1110,7 @@
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        lastDataTime = Date.now();
         buf += decoder.decode(value, { stream: true });
         const lines = buf.split('\n');
         buf = lines.pop();
@@ -1121,6 +1141,8 @@
       }
     }
 
+    clearInterval(stallCheck);
+
     setProg(100);
     $('statTime').textContent = scanRunning ? 'Done' : 'Stopped';
     $('statTimeLabel').textContent = scanRunning ? 'Scan complete' : 'Scan stopped';
@@ -1129,6 +1151,10 @@
 
     renderResults();
     chip('scanDot', 'scanMsg', `Done — ${matchResults.length} match${matchResults.length !== 1 ? 'es' : ''} found`, 'green');
+    resetScanBtn();
+  }
+
+  function resetScanBtn() {
     $('scanBtn').innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Scan folder for face';
     $('scanBtn').onclick = startScan;
     $('scanBtn').disabled = false;
