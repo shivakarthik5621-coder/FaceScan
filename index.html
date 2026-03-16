@@ -136,6 +136,8 @@ select.finp option{background:var(--bg2);}
 .ib:hover svg{stroke:var(--a2);}
 .empst{text-align:center;padding:46px 0;color:var(--tx3);}
 .notice{background:rgba(253,203,110,.06);border:1px solid rgba(253,203,110,.2);border-radius:9px;padding:11px 14px;font-size:11px;color:var(--amber);line-height:1.7;}
+.rc-new{opacity:0;transform:scale(0.92) translateY(8px);}
+.rc{transition:opacity .25s ease,transform .25s ease,border-color .15s;}
 
 /* lightbox */
 #lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:200;align-items:center;justify-content:center;padding:18px;}
@@ -692,38 +694,75 @@ function resetUp(){
 }
 
 // ── Scan ──
+const BATCH = 4; // process 4 images in parallel
+
 async function startScan(){
   if(!U.tok||!U.desc||U.scanning) return;
   const fid=document.getElementById('fsel').value;
   if(!fid){ alert('Please select a folder.'); return; }
   const fn=document.getElementById('fsel').selectedOptions[0].text;
   U.scanning=true; U.results=[];
-  show('prog-sec'); hide('res-sec');
+
+  // Show results section immediately (empty) so matches pop in live
+  show('prog-sec'); show('res-sec');
+  document.getElementById('rgrid').innerHTML='';
+  document.getElementById('empst').style.display='none';
+  document.getElementById('dlall').style.display='none';
+  document.getElementById('rcnt').innerHTML='0 <em>matches</em>';
   setPg(0,'Fetching images from "'+fn+'"…');
+
   try {
     const files=await driveList(fid);
-    addLog('Found '+files.length+' image(s).','in');
-    if(!files.length){ setPg(100,'No images in this folder.'); showResults([]); U.scanning=false; return; }
+    addLog('Found '+files.length+' image(s) — scanning '+BATCH+' at a time…','in');
+    if(!files.length){ setPg(100,'No images in this folder.'); U.scanning=false; return; }
+
     const matcher=new faceapi.FaceMatcher([new faceapi.LabeledFaceDescriptors('target',[U.desc])],CFG.thr);
-    let matched=[],done=0;
-    for(const f of files){
-      setPg(Math.round(done/files.length*100),'Scanning '+(done+1)+'/'+files.length+': '+f.name);
-      try {
-        const burl=await driveBlob(f.id);
-        const img=await iload(burl);
-        const det=await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
-        if(det){
-          const m=matcher.findBestMatch(det.descriptor);
-          if(m.label==='target'){ const c=Math.round((1-m.distance)*100); matched.push({...f,burl,c}); addLog('✓ '+f.name+' ('+c+'%)','ok'); }
-        }
-      } catch(e){ addLog('✗ '+f.name,'er'); }
-      done++;
+    let done=0;
+
+    // Process in parallel batches of BATCH size
+    for(let i=0;i<files.length;i+=BATCH){
+      const batch=files.slice(i,i+BATCH);
+      await Promise.all(batch.map(async f=>{
+        try {
+          const burl=await driveBlob(f.id);
+          const img=await iload(burl);
+          const det=await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+          if(det){
+            const m=matcher.findBestMatch(det.descriptor);
+            if(m.label==='target'){
+              const c=Math.round((1-m.distance)*100);
+              const match={...f,burl,c};
+              U.results.push(match);
+              addMatchCard(match); // instant display!
+              addLog('✓ '+f.name+' ('+c+'%)','ok');
+            }
+          }
+        } catch(e){ addLog('✗ '+f.name,'er'); }
+        done++;
+        setPg(Math.round(done/files.length*100),'Scanned '+done+'/'+files.length+' · '+U.results.length+' match'+(U.results.length!==1?'es':'')+'…');
+      }));
     }
-    matched.sort((a,b)=>b.c-a.c); U.results=matched;
-    setPg(100,'Done — '+matched.length+' match'+(matched.length!==1?'es':'')+' found.');
-    setPill('sc-st','pd','complete'); showResults(matched);
+
+    setPg(100,'Done — '+U.results.length+' match'+(U.results.length!==1?'es':'')+' found.');
+    setPill('sc-st','pd','complete');
+    // Show empty state only if no matches at all
+    if(!U.results.length) document.getElementById('empst').style.display='';
+    else document.getElementById('dlall').style.display='';
   } catch(e){ addLog('Scan failed: '+e.message,'er'); setPill('sc-st','pe','error'); }
   U.scanning=false;
+}
+
+// Add a single result card instantly as it's found
+function addMatchCard(m){
+  const idx=U.results.length-1;
+  document.getElementById('rcnt').innerHTML=U.results.length+' <em>match'+(U.results.length!==1?'es':'')+'</em>';
+  document.getElementById('dlall').style.display='';
+  const g=document.getElementById('rgrid');
+  const d=document.createElement('div'); d.className='rc rc-new';
+  d.innerHTML=`<div class="rcimg"><img src="${m.burl}" alt="${esc(m.name)}" loading="lazy"><span class="rcc">${m.c}%</span></div><div class="rcft"><span class="rcn" title="${esc(m.name)}">${esc(m.name)}</span><div class="rca"><button class="ib" onclick="openLb(${idx})"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ib" onclick="dlF(${idx})"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button></div></div>`;
+  g.appendChild(d);
+  // Pop-in animation
+  requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ d.classList.remove('rc-new'); }); });
 }
 
 async function driveList(fid){
