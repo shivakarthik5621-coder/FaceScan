@@ -516,45 +516,36 @@ function addLog(m,t){
   const ts=new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
   l.textContent='['+ts+'] '+m;b.appendChild(l);b.scrollTop=b.scrollHeight;
 }
-function waitFor(fn, timeout=10000){
-  return new Promise((res,rej)=>{
-    const start=Date.now();
-    const check=()=>{ if(fn()) return res(); if(Date.now()-start>timeout) return rej(new Error('Timeout waiting for: '+fn.toString().slice(0,60))); setTimeout(check,150); };
-    check();
-  });
-}
-
 // ══════════════════════════════════
 //  BOOT
 // ══════════════════════════════════
 async function boot(){
   try {
-    setMsg('Connecting to database…');
-    await waitFor(()=>typeof supabase !== 'undefined');
-    SB = supabase.createClient(SB_URL, SB_KEY);
-
-    setMsg('Loading config…');
-    await loadCFG();
-
-    setMsg('Ready!');
-    await new Promise(r=>setTimeout(r,250));
-
+    // Show app immediately — don't wait for anything
     hide('init-screen');
-    if(IS_ADM){
-      show('app-admin','block');
-      bootAdmin();
+    if(IS_ADM){ show('app-admin','block'); } 
+    else       { show('app-user','block'); }
+
+    // Init Supabase (already loaded synchronously in <head> script tag)
+    if(typeof supabase !== 'undefined'){
+      SB = supabase.createClient(SB_URL, SB_KEY);
     } else {
-      show('app-user','block');
-      bootUser();
+      // Fallback: wait max 3s
+      let tries=0;
+      while(typeof supabase==='undefined' && tries++<20) 
+        await new Promise(r=>setTimeout(r,150));
+      if(typeof supabase!=='undefined') SB=supabase.createClient(SB_URL,SB_KEY);
+    }
+
+    // Load config in background — don't block UI
+    if(SB){
+      loadCFG().then(()=>{
+        // Init auth after config is loaded
+        if(IS_ADM){ bootAdmin(); } else { bootUser(); }
+      });
     }
   } catch(e) {
-    hide('init-spinner');
-    const err=document.getElementById('init-err');
-    err.style.display='block';
-    err.textContent='Error: '+e.message+'\n\nCheck console for details.';
     console.error('Boot failed:',e);
-    // Show app anyway
-    await new Promise(r=>setTimeout(r,1500));
     hide('init-screen');
     if(IS_ADM) show('app-admin','block'); else show('app-user','block');
   }
@@ -579,7 +570,12 @@ async function loadCFG(){
   } catch(e){ console.warn('loadCFG:',e); }
 }
 
-window.addEventListener('load', boot);
+// Boot as early as possible — don't wait for window.load
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
 
 // ══════════════════════════════════
 //  USER
