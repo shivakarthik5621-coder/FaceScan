@@ -427,10 +427,13 @@ select.finp option{background:var(--bg2);}
           <div class="sech"><div class="sect">Face match threshold</div></div>
           <div class="card"><div class="cb">
             <div style="max-width:360px;">
-              <div class="flbl">Sensitivity (0.3 strict → 0.7 loose)</div>
+              <div class="flbl">Match sensitivity — higher = stricter (fewer false matches)</div>
               <div style="display:flex;align-items:center;gap:13px;margin-top:8px;">
-                <input type="range" id="thresh" min="30" max="70" value="50" style="flex:1;height:3px;accent-color:var(--accent);cursor:pointer;" oninput="document.getElementById('tv').textContent=(this.value/100).toFixed(2)">
-                <span style="font-size:14px;font-weight:500;color:var(--a2);min-width:32px;" id="tv">0.50</span>
+                <input type="range" id="thresh" min="65" max="92" value="75" style="flex:1;height:3px;accent-color:var(--accent);cursor:pointer;" oninput="document.getElementById('tv').textContent=(this.value/100).toFixed(2)">
+                <span style="font-size:14px;font-weight:500;color:var(--a2);min-width:32px;" id="tv">0.75</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--tx3);margin-top:4px;">
+                <span>0.65 — more results</span><span>0.92 — exact matches only</span>
               </div>
             </div>
             <button class="btn bp" style="margin-top:14px;" onclick="saveThresh()">Save threshold</button>
@@ -486,7 +489,7 @@ const SCOPE  = 'https://www.googleapis.com/auth/drive.readonly';
 const IS_ADM = new URLSearchParams(location.search).has('admin');
 
 let SB;
-let CFG = { cid:'', akey:'', thr:0.5 };
+let CFG = { cid:'', akey:'', thr:0.75, hfurl:'' };
 let U   = { desc:null, tok:null, tc:null, loaded:false, scanning:false, results:[] };
 let A   = { tok:null, tc:null, folders:[], act:[] };
 
@@ -564,7 +567,7 @@ async function loadCFG(){
     (data||[]).forEach(r=>{
       if(r.key==='google_client_id') CFG.cid=r.value;
       if(r.key==='google_api_key')   CFG.akey=r.value;
-      if(r.key==='match_threshold')  CFG.thr=parseFloat(r.value)||0.5;
+      if(r.key==='match_threshold')  CFG.thr=parseFloat(r.value)||0.75;
       if(r.key==='hf_url')           { CFG.hfurl=r.value; HF_URL=r.value; }
     });
     if(CFG.cid)   { const e=document.getElementById('ccid');   if(e) e.value=CFG.cid; }
@@ -890,7 +893,8 @@ async function startScan(){
         results.forEach((res, idx)=>{
           if(res.face_found && res.embedding){
             const sim = cosineSim(U.desc, res.embedding);
-            if(sim >= (1 - CFG.thr)){
+            // CFG.thr is now a direct cosine similarity minimum (0.75 default)
+            if(sim >= CFG.thr){
               const c = Math.round(sim*100);
               const f = batch[idx];
               const dispUrl = URL.createObjectURL(blobs.get(f.id));
