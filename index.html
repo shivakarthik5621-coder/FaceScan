@@ -412,6 +412,11 @@ select.finp option{background:var(--bg2);}
               <div><label class="flbl">OAuth Client ID</label><input class="finp" type="text" id="ccid" placeholder="xxxxxxx.apps.googleusercontent.com"></div>
               <div><label class="flbl">API Key</label><input class="finp" type="text" id="cakey" placeholder="AIza…"></div>
             </div>
+            <div style="margin-top:12px;">
+              <label class="flbl">HuggingFace Space URL</label>
+              <input class="finp" type="text" id="chfurl" placeholder="https://YOUR-USERNAME-facescan-api.hf.space">
+              <div style="font-size:10px;color:var(--tx3);margin-top:5px;line-height:1.6;">Deploy the backend Space first, then paste its URL here. No trailing slash.</div>
+            </div>
             <button class="btn bp" style="margin-top:12px;" onclick="saveCreds()">Save credentials</button>
             <div style="font-size:10px;color:var(--tx3);margin-top:10px;line-height:1.7;">
               Authorized JavaScript origin: <code style="color:var(--a2);background:var(--bg3);padding:1px 5px;border-radius:4px;font-size:10px;">https://shivakarthik5621-coder.github.io</code>
@@ -467,7 +472,6 @@ select.finp option{background:var(--bg2);}
 
 <!-- Load external libs AFTER body (non-blocking, more reliable) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.js"></script>
 <script src="https://apis.google.com/js/api.js" defer></script>
 <script src="https://accounts.google.com/gsi/client" defer></script>
 
@@ -561,9 +565,11 @@ async function loadCFG(){
       if(r.key==='google_client_id') CFG.cid=r.value;
       if(r.key==='google_api_key')   CFG.akey=r.value;
       if(r.key==='match_threshold')  CFG.thr=parseFloat(r.value)||0.5;
+      if(r.key==='hf_url')           { CFG.hfurl=r.value; HF_URL=r.value; }
     });
-    if(CFG.cid)  { const e=document.getElementById('ccid');  if(e) e.value=CFG.cid; }
-    if(CFG.akey) { const e=document.getElementById('cakey'); if(e) e.value=CFG.akey; }
+    if(CFG.cid)   { const e=document.getElementById('ccid');   if(e) e.value=CFG.cid; }
+    if(CFG.akey)  { const e=document.getElementById('cakey');  if(e) e.value=CFG.akey; }
+    if(CFG.hfurl) { const e=document.getElementById('chfurl'); if(e) e.value=CFG.hfurl; }
     const p=Math.round(CFG.thr*100);
     const thr=document.getElementById('thresh'); if(thr) thr.value=p;
     const tv=document.getElementById('tv'); if(tv) tv.textContent=CFG.thr.toFixed(2);
@@ -627,31 +633,39 @@ function handleAuth(){
   setTimeout(()=>{ if(U.tc) U.tc.requestAccessToken({prompt:'consent'}); else alert('Google auth not ready, try again in a moment.'); },100);
 }
 
-// ── Face API ──
-async function loadFaceAPI(){
-  if(U.loaded) return;
-  addLog('Loading face models…','in');
-  if(typeof faceapi==='undefined') throw new Error('face-api.js not loaded');
-  // TinyFaceDetector = ~3x faster than SSD MobileNet
-  await Promise.all([
-    faceapi.nets.tinyFaceDetector.loadFromUri(MDL),
-    faceapi.nets.faceLandmark68TinyNet.loadFromUri(MDL),
-    faceapi.nets.faceRecognitionNet.loadFromUri(MDL),
-  ]);
-  // Warm up the model so first scan isn't slow
-  const warmup=document.createElement('canvas');
-  warmup.width=160;warmup.height=160;
-  await faceapi.detectSingleFace(warmup,new faceapi.TinyFaceDetectorOptions({inputSize:160})).withFaceLandmarks(true).withFaceDescriptor();
-  U.loaded=true; addLog('Models ready (GPU warmed up).','ok');
+// ── HuggingFace Face API ──
+// Set this after you deploy your HF Space
+let HF_URL = ''; // e.g. https://YOUR-USERNAME-facescan-api.hf.space
+
+function cosineSim(a, b){
+  let dot=0, na=0, nb=0;
+  for(let i=0;i<a.length;i++){ dot+=a[i]*b[i]; na+=a[i]*a[i]; nb+=b[i]*b[i]; }
+  return dot/(Math.sqrt(na)*Math.sqrt(nb));
 }
 
-// Resize image to max px — drastically cuts inference time
-function resizeImg(img, maxSize=320){
-  const cv=document.createElement('canvas');
-  const sc=Math.min(maxSize/img.width, maxSize/img.height, 1);
-  cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
-  cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
-  return cv;
+async function getEmbedding(imageBlob){
+  if(!HF_URL) throw new Error('HuggingFace API URL not set — add it in Configuration tab.');
+  const fd = new FormData();
+  fd.append('file', imageBlob, 'img.jpg');
+  const r = await fetch(HF_URL+'/embed', {method:'POST', body:fd});
+  if(!r.ok) throw new Error('HF API error: '+r.status);
+  const d = await r.json();
+  return d; // {embedding: [...512 floats] | null, face_found: bool}
+}
+
+// Resize image blob to max px before sending — reduces upload size & API time
+async function resizeBlobToJpeg(blob, maxSize=480){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      const sc=Math.min(maxSize/img.width, maxSize/img.height, 1);
+      const cv=document.createElement('canvas');
+      cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      cv.toBlob(b=>res(b),'image/jpeg',0.85);
+    };
+    img.src=URL.createObjectURL(blob);
+  });
 }
 
 // ── Upload ──
@@ -669,9 +683,10 @@ async function processFile(file){
   setPill('u-st','pr','processing');
   document.getElementById('upz').style.display='none';
   document.getElementById('pwrap').classList.add('show');
+
+  // Draw preview
   const img=new Image();
   img.onload=async()=>{
-    // Draw preview at 174px keeping aspect ratio
     const cv=document.getElementById('pcv'), ctx=cv.getContext('2d'), S=174;
     const r=Math.min(S/img.width,S/img.height);
     const w=Math.round(img.width*r), h=Math.round(img.height*r);
@@ -679,44 +694,36 @@ async function processFile(file){
     ctx.clearRect(0,0,S,S);
     ctx.drawImage(img,ox,oy,w,h);
     document.getElementById('logb').classList.add('on');
+
     try {
-      await loadFaceAPI();
-      // Detect on 320px resized version for speed
-      const small=resizeImg(img,320);
-      const opts=new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:0.4});
-      const det=await faceapi.detectSingleFace(small,opts).withFaceLandmarks(true).withFaceDescriptor();
+      if(!HF_URL){ addLog('⚠ Set HuggingFace API URL in Configuration tab first.','er'); updBtn(); return; }
+      addLog('Sending selfie to HF API…','in');
+      const small = await resizeBlobToJpeg(file, 480);
+      const result = await getEmbedding(small);
+
       const oc=document.getElementById('fov').getContext('2d');
       oc.clearRect(0,0,S,S);
-      if(det){
-        U.desc=det.descriptor;
-        // Map box from 320px canvas → 174px preview canvas
-        const sx=w/small.width, sy=h/small.height;
-        const b=det.detection.box;
-        const bx=ox+b.x*sx, by=oy+b.y*sy, bw=b.width*sx, bh=b.height*sy;
-        // Fill
-        oc.fillStyle='rgba(108,92,231,0.08)';
+
+      if(result.face_found && result.embedding){
+        U.desc = result.embedding;
+        // Draw a simple face box indicator (HF API doesn't return box coords, just confirmation)
+        const bx=ox+w*0.2, by=oy+h*0.1, bw=w*0.6, bh=h*0.8;
+        oc.fillStyle='rgba(108,92,231,0.07)';
         oc.fillRect(bx,by,bw,bh);
-        // Border
         oc.strokeStyle='rgba(162,155,254,0.9)';
         oc.lineWidth=1.5;
         oc.strokeRect(bx,by,bw,bh);
-        // Corner L-brackets
-        const cs=Math.min(bw,bh)*0.2;
-        oc.strokeStyle='#6c5ce7';
-        oc.lineWidth=2.5;
-        oc.lineCap='round';
-        // TL
+        const cs=Math.min(bw,bh)*0.18;
+        oc.strokeStyle='#6c5ce7'; oc.lineWidth=2.5; oc.lineCap='round';
         oc.beginPath();oc.moveTo(bx,by+cs);oc.lineTo(bx,by);oc.lineTo(bx+cs,by);oc.stroke();
-        // TR
         oc.beginPath();oc.moveTo(bx+bw-cs,by);oc.lineTo(bx+bw,by);oc.lineTo(bx+bw,by+cs);oc.stroke();
-        // BL
         oc.beginPath();oc.moveTo(bx,by+bh-cs);oc.lineTo(bx,by+bh);oc.lineTo(bx+cs,by+bh);oc.stroke();
-        // BR
         oc.beginPath();oc.moveTo(bx+bw-cs,by+bh);oc.lineTo(bx+bw,by+bh);oc.lineTo(bx+bw,by+bh-cs);oc.stroke();
+
         document.getElementById('pfc').textContent='1 face detected';
         document.getElementById('fbadge').style.display='inline-flex';
         setPill('u-st','pd','ready');
-        addLog('Face descriptor extracted.','ok');
+        addLog('Face embedding extracted (512-d Facenet512).','ok');
       } else {
         U.desc=null;
         document.getElementById('pfc').textContent='No face detected';
@@ -738,12 +745,13 @@ function resetUp(){
 }
 
 // ── Scan ──
-const DOWNLOAD_CONCURRENCY = 10;
+const CONCURRENCY = 12; // 12 parallel API calls to HF Space
 
 async function startScan(){
   if(!U.tok||!U.desc||U.scanning) return;
   const fid=document.getElementById('fsel').value;
   if(!fid){ alert('Please select a folder.'); return; }
+  if(!HF_URL){ alert('Set HuggingFace API URL in the Configuration tab first.'); return; }
   const fn=document.getElementById('fsel').selectedOptions[0].text;
   U.scanning=true; U.results=[];
 
@@ -756,97 +764,51 @@ async function startScan(){
 
   try {
     const files=await driveList(fid);
-    addLog('Found '+files.length+' images.','in');
+    addLog('Found '+files.length+' images — sending to HF API ('+CONCURRENCY+' parallel)…','in');
     if(!files.length){ setPg(100,'No images in this folder.'); U.scanning=false; return; }
 
-    await loadFaceAPI();
-    const matcher=new faceapi.FaceMatcher(
-      [new faceapi.LabeledFaceDescriptors('target',[U.desc])], CFG.thr
-    );
-    // Pass 1 opts: detection only, tiny input — very fast
-    const fastOpts=new faceapi.TinyFaceDetectorOptions({inputSize:160, scoreThreshold:0.5});
-    // Pass 2 opts: larger input for accurate descriptor
-    const fullOpts=new faceapi.TinyFaceDetectorOptions({inputSize:224, scoreThreshold:0.4});
+    let done=0;
+    const queue=[...files];
 
-    // ── PASS 1: detect faces only (no landmarks, no descriptor) ──
-    // Run 10 downloads in parallel, detection sequential on GPU
-    addLog('Pass 1 — fast face detection on all images…','in');
-    let p1done=0;
-    const hasFace=[]; // files that passed pass 1
-    const imgCache=new Map(); // file.id → {small224, dispBurl}
+    async function worker(){
+      while(queue.length>0){
+        const f=queue.shift();
+        try {
+          // Download from Drive
+          const r=await fetch('https://www.googleapis.com/drive/v3/files/'+f.id+'?alt=media',
+            {headers:{Authorization:'Bearer '+U.tok}});
+          if(!r.ok) throw new Error('HTTP '+r.status);
+          const blob=await r.blob();
 
-    const p1Queue=[...files];
-    const p1Active=[];
+          // Resize before uploading to API — saves bandwidth + time
+          const small=await resizeBlobToJpeg(blob, 480);
 
-    async function p1Worker(){
-      while(p1Queue.length>0){
-        const f=p1Queue.shift();
-        try{
-          const burl=await driveBlob(f.id);
-          const img=await iload(burl);
-          // tiny 160px for fast detection
-          const tiny=resizeImg(img,160);
-          const det=await faceapi.detectSingleFace(tiny,fastOpts);
-          if(det){
-            // keep 224px version for pass 2
-            const small=resizeImg(img,224);
-            const dispBurl=await driveBlob(f.id);
-            imgCache.set(f.id,{small,dispBurl});
-            hasFace.push(f);
-            addLog('Face found in: '+f.name,'in');
+          // Get embedding from HF API
+          const result=await getEmbedding(small);
+
+          if(result.face_found && result.embedding){
+            // Cosine similarity between selfie embedding and this image
+            const sim=cosineSim(U.desc, result.embedding);
+            if(sim >= (1 - CFG.thr)){
+              const c=Math.round(sim*100);
+              const dispUrl=URL.createObjectURL(blob);
+              const match={...f, burl:dispUrl, c};
+              U.results.push(match);
+              addMatchCard(match);
+              addLog('✓ '+f.name+' ('+c+'%)','ok');
+            }
           }
-          URL.revokeObjectURL(burl);
-        }catch(e){ /* skip */ }
-        p1done++;
+        } catch(e){ addLog('✗ '+f.name+': '+e.message,'er'); }
+        done++;
         setPg(
-          Math.round(p1done/files.length*50), // pass 1 = first 50% of bar
-          'Pass 1: '+p1done+'/'+files.length+' scanned · '+hasFace.length+' faces found'
+          Math.round(done/files.length*100),
+          'Scanned '+done+'/'+files.length+' · '+U.results.length+' match'+(U.results.length!==1?'es':'')
         );
       }
     }
 
-    // Run DOWNLOAD_CONCURRENCY workers simultaneously for pass 1
-    await Promise.all(Array.from({length:DOWNLOAD_CONCURRENCY},()=>p1Worker()));
-
-    addLog('Pass 1 done — '+hasFace.length+'/'+files.length+' images have faces. Running full match…','ok');
-
-    if(!hasFace.length){
-      setPg(100,'No faces found in any image.');
-      document.getElementById('empst').style.display='';
-      U.scanning=false; return;
-    }
-
-    // ── PASS 2: full descriptor only on face-containing images ──
-    addLog('Pass 2 — matching descriptors on '+hasFace.length+' images…','in');
-    let p2done=0;
-
-    for(const f of hasFace){
-      try{
-        const {small,dispBurl}=imgCache.get(f.id);
-        const det=await faceapi.detectSingleFace(small,fullOpts)
-          .withFaceLandmarks(true).withFaceDescriptor();
-        if(det){
-          const m=matcher.findBestMatch(det.descriptor);
-          if(m.label==='target'){
-            const c=Math.round((1-m.distance)*100);
-            const match={...f,burl:dispBurl,c};
-            U.results.push(match);
-            addMatchCard(match);
-            addLog('✓ '+f.name+' ('+c+'%)','ok');
-          } else {
-            URL.revokeObjectURL(dispBurl);
-          }
-        } else {
-          URL.revokeObjectURL(dispBurl);
-        }
-      }catch(e){ addLog('✗ '+f.name,'er'); }
-      p2done++;
-      setPg(
-        50+Math.round(p2done/hasFace.length*50), // pass 2 = second 50% of bar
-        'Pass 2: '+p2done+'/'+hasFace.length+' matched · '+U.results.length+' hit'+(U.results.length!==1?'s':'')
-      );
-    }
-    imgCache.clear();
+    // Run CONCURRENCY workers simultaneously
+    await Promise.all(Array.from({length:CONCURRENCY}, ()=>worker()));
 
     setPg(100,'Done — '+U.results.length+' match'+(U.results.length!==1?'es':'')+' found.');
     setPill('sc-st','pd','complete');
@@ -1018,11 +980,19 @@ function pickFolder(){
 }
 
 async function saveCreds(){
-  const cid=document.getElementById('ccid').value.trim(), ak=document.getElementById('cakey').value.trim();
-  if(!cid||!ak){ toast('Fill both fields','er'); return; }
+  const cid=document.getElementById('ccid').value.trim();
+  const ak=document.getElementById('cakey').value.trim();
+  const hf=document.getElementById('chfurl').value.trim().replace(/\/$/,'');
+  if(!cid||!ak){ toast('Fill OAuth Client ID and API Key','er'); return; }
   try {
-    await SB.from('app_config').upsert([{key:'google_client_id',value:cid},{key:'google_api_key',value:ak}],{onConflict:'key'});
+    const rows=[
+      {key:'google_client_id',value:cid},
+      {key:'google_api_key',value:ak},
+    ];
+    if(hf) rows.push({key:'hf_url',value:hf});
+    await SB.from('app_config').upsert(rows,{onConflict:'key'});
     CFG.cid=cid; CFG.akey=ak;
+    if(hf){ CFG.hfurl=hf; HF_URL=hf; }
     toast('Saved','ok'); logAct('config','Credentials updated'); initAA();
   } catch(e){ toast('Error: '+e.message,'er'); }
 }
