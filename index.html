@@ -1155,7 +1155,10 @@
       if (timings.length > 20) timings.shift();
       const avg = timings.reduce((a, b) => a + b, 0) / timings.length;
       $('statTime').textContent = formatTime(((total - i - 1) * avg) / 1000);
-      if ((i + 1) % 25 === 0) await new Promise(res => setTimeout(res, 200));
+      // Yield to browser every photo to prevent freeze
+      await new Promise(res => setTimeout(res, 50));
+      // Longer GC pause every 20 photos
+      if ((i + 1) % 20 === 0) await new Promise(res => setTimeout(res, 500));
     }
 
     setProg(100);
