@@ -1080,7 +1080,7 @@
     try {
       const payload = {
         encoding: probeEncoding,
-        files: driveFiles.map(f => ({ id: f.id, name: f.name })),
+        files: driveFiles.map(f => ({ id: f.id, name: f.name, thumbnailLink: f.thumbnailLink || null })),
         access_token: accessToken,
         threshold
       };
@@ -1118,7 +1118,9 @@
           if (!line.trim()) continue;
           try {
             const msg = JSON.parse(line);
-            if (msg.type === 'progress') {
+            if (msg.type === 'heartbeat') {
+              chip('scanDot', 'scanMsg', `Scanning 0 / ${total}…`, 'blue');
+            } else if (msg.type === 'progress') {
               setProg(Math.round((msg.current / total) * 100));
               const elapsed = (Date.now() - startTime) / 1000;
               const rate = msg.current / elapsed;
