@@ -726,6 +726,7 @@
 </div>
 
 <!-- SCRIPTS -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
   const CLIENT_ID  = '581395571604-o2c01u542hnprl2thmdi2nbmlg2bq44m.apps.googleusercontent.com';
@@ -733,10 +734,10 @@
   const SB_URL     = 'https://mksnsgrlajrexkfdxjqg.supabase.co';
   const SB_KEY     = 'sb_publishable_C_Fl1V487V0RQPTtaKLI8A_7U7dtYJm';
   const SB_HEADERS = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
-  const API_URL    = 'https://purple5621-facescan-api.hf.space';
+  const MODEL_URL  = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
 
-  let accessToken = null, probeEncoding = null, probeFile = null;
-  let driveFiles = [], matchResults = [], isAdmin = false, apiReady = false;
+  let accessToken = null, probeDesc = null, modelsReady = false;
+  let driveFiles = [], matchResults = [], isAdmin = false;
   let currentFolder = '18AHvEjOny_X-BCYCg4M498LHe-Lq-CCh';
 
   // ── SUPABASE CONFIG ──
@@ -780,22 +781,21 @@
   }
   function setProg(p) { $('prog').style.width = p + '%'; }
   function checkReady() {
-    $('scanBtn').disabled = !(apiReady && probeEncoding && accessToken && driveFiles.length > 0);
+    $('scanBtn').disabled = !(modelsReady && probeDesc && accessToken && driveFiles.length > 0);
   }
 
-  // ── API HEALTH CHECK + WARMUP ──
+  // ── MODELS ──
   async function initAPI() {
-    chip('modelDot', 'modelMsg', 'Connecting to scan server…', 'amber');
+    chip('modelDot', 'modelMsg', 'Loading face models…', 'amber');
     try {
-      const r = await fetch(`${API_URL}/health`);
-      const d = await r.json();
-      if (d.status === 'ok') {
-        apiReady = true;
-        chip('modelDot', 'modelMsg', 'Server ready', 'green');
-        checkReady();
-      } else throw new Error('not ok');
+      await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+      await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+      await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+      modelsReady = true;
+      chip('modelDot', 'modelMsg', 'Models ready', 'green');
+      checkReady();
     } catch(e) {
-      chip('modelDot', 'modelMsg', 'Server offline — retrying…', 'red');
+      chip('modelDot', 'modelMsg', 'Model load failed — retrying…', 'red');
       setTimeout(initAPI, 5000);
     }
   }
@@ -1006,42 +1006,73 @@
     } catch(e) { chip('scanDot', 'scanMsg', 'Failed to load folder', 'red'); }
   }
 
-  // ── PROBE — send to server for encoding ──
+  // ── PROBE — browser-based face-api.js ──
   $('probeInput').addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
-    probeFile = file;
     const url = URL.createObjectURL(file);
     $('probePreview').src = url;
     $('probeZone').style.display = 'none';
     $('previewWrap').style.display = 'block';
-    chip('probeDot', 'probeMsg', 'Sending to server — detecting face…', 'amber');
-    probeEncoding = null; checkReady();
+    chip('probeDot', 'probeMsg', 'Detecting face…', 'amber');
+    probeDesc = null; checkReady();
+    if (!modelsReady) { chip('probeDot', 'probeMsg', 'Models still loading — try again shortly', 'amber'); return; }
     try {
-      // Show cold start warning after 8 seconds
-      const coldStartTimer = setTimeout(() => {
-        chip('probeDot', 'probeMsg', 'Server warming up — this takes ~1 min on first use…', 'amber');
-      }, 8000);
-      const form = new FormData();
-      form.append('photo', file);
-      const r = await fetch(`${API_URL}/encode-probe`, { method: 'POST', body: form });
-      clearTimeout(coldStartTimer);
-      const d = await r.json();
-      if (d.error) { chip('probeDot', 'probeMsg', d.error, 'red'); checkReady(); return; }
-      probeEncoding = d.encoding;
+      const img = await faceapi.fetchImage(url);
+      const det = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+      if (!det) { chip('probeDot', 'probeMsg', 'No face detected — try a clearer photo', 'red'); checkReady(); return; }
+      probeDesc = det.descriptor;
       chip('probeDot', 'probeMsg', 'Face detected — ready to scan', 'green');
       checkReady();
     } catch(e) {
-      chip('probeDot', 'probeMsg', 'Server error — check connection', 'red');
+      chip('probeDot', 'probeMsg', 'Error processing photo — try again', 'red');
       checkReady();
     }
   });
 
-  // ── SCAN ──
+  // ── SCAN — browser-based face-api.js ──
   function formatTime(seconds) {
     if (seconds <= 0) return '< 1s';
     if (seconds < 60) return Math.round(seconds) + 's';
     const m = Math.floor(seconds / 60), s = Math.round(seconds % 60);
     return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  }
+
+  async function fetchDriveThumbnail(fileId) {
+    const r = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink`,
+      { headers: { Authorization: 'Bearer ' + accessToken } }
+    );
+    const meta = await r.json();
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const timeout = setTimeout(() => { img.src = ''; reject(new Error('timeout')); }, 10000);
+      img.onload = () => {
+        clearTimeout(timeout);
+        try {
+          const c = document.createElement('canvas');
+          const scale = Math.min(1, 256 / Math.max(img.width, img.height));
+          c.width = Math.round(img.width * scale);
+          c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          img.src = '';
+          resolve(c);
+        } catch(e) { reject(e); }
+      };
+      img.onerror = () => { clearTimeout(timeout); reject(new Error('load error')); };
+      const srcUrl = meta.thumbnailLink ? meta.thumbnailLink.replace(/=s\d+/, '=s256') : null;
+      if (srcUrl) {
+        img.src = srcUrl;
+      } else {
+        fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+          headers: { Authorization: 'Bearer ' + accessToken }
+        }).then(r => r.blob()).then(blob => {
+          const u = URL.createObjectURL(blob);
+          img.onload = () => { URL.revokeObjectURL(u); img.onload(); };
+          img.src = u;
+        }).catch(reject);
+      }
+    });
   }
 
   async function fetchDriveImage(id) {
@@ -1050,14 +1081,13 @@
     return URL.createObjectURL(blob);
   }
 
-  let scanRunning = false, scanController = null;
+  let scanRunning = false;
 
   async function startScan() {
-    if (!probeEncoding || !driveFiles.length || !accessToken) return;
+    if (!probeDesc || !driveFiles.length || !accessToken) return;
     const threshold = (100 - parseInt($('threshold').value)) / 100;
 
     scanRunning = true;
-    scanController = new AbortController();
     $('scanBtn').innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg> Stop scan';
     $('scanBtn').onclick = stopScan;
     $('scanBtn').disabled = false;
@@ -1067,90 +1097,72 @@
     $('statMatched').textContent = '0';
     setProg(0); matchResults = [];
     initResultsArea();
-    chip('scanDot', 'scanMsg', 'Connecting to scan server…', 'amber');
 
-    // Stall detector — if no data for 30s, show warning
-    let lastDataTime = Date.now();
-    const stallCheck = setInterval(() => {
-      if (!scanRunning) { clearInterval(stallCheck); return; }
-      const stalled = (Date.now() - lastDataTime) / 1000;
-      if (stalled > 30) chip('scanDot', 'scanMsg', `No response for ${Math.round(stalled)}s — server may be restarting…`, 'amber');
-    }, 5000);
+    const timings = [];
+    const total = driveFiles.length;
 
-    try {
-      const payload = {
-        encoding: probeEncoding,
-        files: driveFiles.map(f => ({ id: f.id, name: f.name, thumbnailLink: f.thumbnailLink || null })),
-        access_token: accessToken,
-        threshold
-      };
+    for (let i = 0; i < total; i++) {
+      if (!scanRunning) break;
+      const iterStart = Date.now();
+      chip('scanDot', 'scanMsg', `Scanning ${i + 1} / ${total}…`, 'blue');
+      setProg(Math.round((i / total) * 100));
 
-      const r = await fetch(`${API_URL}/scan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: scanController.signal
-      });
-
-      if (!r.ok) {
-        const err = await r.text();
-        chip('scanDot', 'scanMsg', `Server error ${r.status}: ${err}`, 'red');
-        clearInterval(stallCheck);
-        resetScanBtn(); return;
-      }
-
-      chip('scanDot', 'scanMsg', 'Scanning…', 'blue');
-
-      const reader = r.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      const total = driveFiles.length;
-      const startTime = Date.now();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        lastDataTime = Date.now();
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop();
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const msg = JSON.parse(line);
-            if (msg.type === 'heartbeat') {
-              chip('scanDot', 'scanMsg', `Scanning 0 / ${total}…`, 'blue');
-            } else if (msg.type === 'progress') {
-              setProg(Math.round((msg.current / total) * 100));
-              const elapsed = (Date.now() - startTime) / 1000;
-              const rate = msg.current / elapsed;
-              const remaining = (total - msg.current) / rate;
-              $('statTime').textContent = msg.current > 3 ? formatTime(remaining) : '—';
-              chip('scanDot', 'scanMsg', `Scanning ${msg.current} / ${total}…`, 'blue');
-            } else if (msg.type === 'match') {
-              matchResults.push(msg);
-              $('statMatched').textContent = matchResults.length;
-              appendResultCard(msg);
-            } else if (msg.type === 'done') {
-              break;
-            }
-          } catch(e) {}
+      let canvas = null;
+      try {
+        const f = driveFiles[i];
+        const thumbUrl = f.thumbnailLink ? f.thumbnailLink.replace(/=s\d+/, '=s256') : null;
+        canvas = await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          const timeout = setTimeout(() => { img.src = ''; reject(new Error('timeout')); }, 10000);
+          img.onload = () => {
+            clearTimeout(timeout);
+            const c = document.createElement('canvas');
+            const scale = Math.min(1, 256 / Math.max(img.width, img.height));
+            c.width = Math.round(img.width * scale);
+            c.height = Math.round(img.height * scale);
+            c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+            img.src = ''; resolve(c);
+          };
+          img.onerror = () => { clearTimeout(timeout); reject(); };
+          if (thumbUrl) { img.src = thumbUrl; }
+          else {
+            fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, {
+              headers: { Authorization: 'Bearer ' + accessToken }
+            }).then(r => r.blob()).then(blob => {
+              const u = URL.createObjectURL(blob);
+              img.onload = () => { URL.revokeObjectURL(u); const c = document.createElement('canvas'); const scale = Math.min(1, 256/Math.max(img.width,img.height)); c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale); c.getContext('2d').drawImage(img,0,0,c.width,c.height); img.src=''; resolve(c); };
+              img.src = u;
+            }).catch(reject);
+          }
+        });
+        const det = await faceapi.detectSingleFace(canvas).withFaceLandmarks().withFaceDescriptor();
+        if (det) {
+          const dist = faceapi.euclideanDistance(probeDesc, det.descriptor);
+          if (dist < threshold) {
+            const thumb = canvas.toDataURL('image/jpeg', 0.6);
+            canvas.width = 1; canvas.height = 1;
+            const r = { id: f.id, name: f.name, dist, sim: Math.max(0, 1 - dist), thumb };
+            matchResults.push(r);
+            $('statMatched').textContent = matchResults.length;
+            appendResultCard(r);
+          }
         }
-      }
-    } catch(e) {
-      if (e.name !== 'AbortError') {
-        chip('scanDot', 'scanMsg', 'Scan error: ' + e.message, 'red');
-      }
-    }
+      } catch(e) { console.warn('skip', e); }
+      if (canvas) { canvas.width = 1; canvas.height = 1; }
 
-    clearInterval(stallCheck);
+      timings.push(Date.now() - iterStart);
+      if (timings.length > 20) timings.shift();
+      const avg = timings.reduce((a, b) => a + b, 0) / timings.length;
+      $('statTime').textContent = formatTime(((total - i - 1) * avg) / 1000);
+      if ((i + 1) % 25 === 0) await new Promise(res => setTimeout(res, 200));
+    }
 
     setProg(100);
     $('statTime').textContent = scanRunning ? 'Done' : 'Stopped';
     $('statTimeLabel').textContent = scanRunning ? 'Scan complete' : 'Scan stopped';
     $('statMatched').textContent = matchResults.length;
     scanRunning = false;
-
     renderResults();
     chip('scanDot', 'scanMsg', `Done — ${matchResults.length} match${matchResults.length !== 1 ? 'es' : ''} found`, 'green');
     resetScanBtn();
@@ -1164,7 +1176,6 @@
 
   function stopScan() {
     scanRunning = false;
-    if (scanController) scanController.abort();
     chip('scanDot', 'scanMsg', 'Stopping…', 'amber');
   }
 
