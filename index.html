@@ -632,79 +632,49 @@ async function startScan(){
     addLog('Found '+files.length+' images — threshold: '+CFG.thr.toFixed(2),'in');
     if(!files.length){ setPg(100,'No images in this folder.'); U.scanning=false; return; }
 
+    // Simple sequential scan — one image at a time, no batching complexity
+    // Most reliable approach: download → send to API → show result → next
+    const CONCURRENT = 6; // 6 images in parallel for speed without complexity
     let done=0;
-    const tick=()=>setPg(Math.round(done/files.length*100),'Scanned '+done+'/'+files.length+' · '+U.results.length+' match'+(U.results.length!==1?'es':''));
+    const queue=[...files];
 
-    const dlQ=[...files], p1Q=[], p2Q=[];
-    let dlDone=false, p1Done=false;
-
-    async function dlWorker(){
-      while(dlQ.length>0){
-        const f=dlQ.shift();
+    async function worker(){
+      while(queue.length>0){
+        const f=queue.shift();
         try{
-          const r=await fetch('https://www.googleapis.com/drive/v3/files/'+f.id+'?alt=media',{headers:{Authorization:'Bearer '+U.tok}});
+          // Download from Drive
+          const r=await fetch('https://www.googleapis.com/drive/v3/files/'+f.id+'?alt=media',
+            {headers:{Authorization:'Bearer '+U.tok}});
           if(!r.ok) throw new Error('HTTP '+r.status);
-          p1Q.push({f,blob:await r.blob()});
-        }catch(e){ done++; tick(); }
-      }
-    }
+          const blob=await r.blob();
 
-    async function p1Worker(){
-      while(!dlDone||p1Q.length>0){
-        while(p1Q.length<P1_BATCH&&!dlDone) await new Promise(r=>setTimeout(r,30));
-        if(!p1Q.length) break;
-        const batch=p1Q.splice(0,Math.min(P1_BATCH,p1Q.length));
-        try{
+          // Send to HF API for embedding
           const fd=new FormData();
-          await Promise.all(batch.map(async ({f,blob})=>fd.append('files',await resizeBlob(blob,320),f.id+'.jpg')));
-          const r=await fetch(HF_URL+'/detect_batch',{method:'POST',body:fd});
-          if(r.ok){
-            const {results}=await r.json();
-            results.forEach((res,i)=>{ if(res.has_face) p2Q.push(batch[i]); else{ done++; tick(); } });
-          } else batch.forEach(item=>p2Q.push(item));
-        }catch(e){ batch.forEach(item=>p2Q.push(item)); }
-      }
-      p1Done=true;
-    }
+          fd.append('file', await resizeBlob(blob,640), f.name);
+          const res=await fetch(HF_URL+'/embed',{method:'POST',body:fd});
+          if(!res.ok) throw new Error('API '+res.status);
+          const data=await res.json();
 
-    async function p2Worker(){
-      while(!p1Done||p2Q.length>0){
-        if(!p2Q.length){ await new Promise(r=>setTimeout(r,30)); continue; }
-        const batch=p2Q.splice(0,Math.min(P2_BATCH,p2Q.length));
-        try{
-          const fd=new FormData();
-          await Promise.all(batch.map(async ({f,blob})=>fd.append('files',await resizeBlob(blob,480),f.id+'.jpg')));
-          const r=await fetch(HF_URL+'/embed_batch',{method:'POST',body:fd});
-          if(r.ok){
-            const {results}=await r.json();
-            results.forEach((res,i)=>{
-              const {f,blob}=batch[i];
-              if(res.face_found&&res.embedding){
-                const dist=euclideanDist(U.desc,res.embedding);
-                if(dist<=CFG.thr){
-                  const match={...f,burl:URL.createObjectURL(blob),c:distToScore(dist),dist,attrs:null};
-                  U.results.push(match);
-                  addMatchCard(match);
-                  addLog('✓ '+f.name+' dist='+dist.toFixed(3),'ok');
-                  // Fetch attributes in background — non-blocking
-                  fetchAttrs(U.results.length-1, blob);
-                } else {
-                  addLog('✗ '+f.name+' dist='+dist.toFixed(3),'');
-                }
-              }
-              done++; tick();
-            });
-          } else batch.forEach(()=>{ done++; tick(); });
-        }catch(e){ batch.forEach(()=>{ done++; tick(); }); }
+          if(data.face_found&&data.embedding){
+            const dist=euclideanDist(U.desc,data.embedding);
+            addLog((dist<=CFG.thr?'✓':'✗')+' '+f.name+' dist='+dist.toFixed(3),(dist<=CFG.thr?'ok':''));
+            if(dist<=CFG.thr){
+              const match={...f,burl:URL.createObjectURL(blob),c:distToScore(dist),dist,attrs:null};
+              U.results.push(match);
+              addMatchCard(match);
+              fetchAttrs(U.results.length-1,blob);
+            }
+          } else {
+            addLog('— '+f.name+' (no face)','');
+          }
+        }catch(e){ addLog('✗ '+f.name+': '+e.message,'er'); }
+        done++;
+        setPg(Math.round(done/files.length*100),
+          'Scanned '+done+'/'+files.length+' · '+U.results.length+' match'+(U.results.length!==1?'es':''));
       }
     }
 
-    await Promise.all([
-      (async()=>{ await Promise.all(Array.from({length:DL_CON},()=>dlWorker())); dlDone=true; })(),
-      p1Worker(),
-      p2Worker(),
-      p2Worker(),
-    ]);
+    await Promise.all(Array.from({length:CONCURRENT},()=>worker()));
 
     setPg(100,'Done — '+U.results.length+' match'+(U.results.length!==1?'es':'')+' found.');
     setPill('sc-st','pd','complete');
@@ -713,6 +683,7 @@ async function startScan(){
   }catch(e){ addLog('Scan failed: '+e.message,'er'); setPill('sc-st','pe','error'); }
   U.scanning=false;
 }
+
 
 // Fetch age/gender/emotion/race for a matched photo — runs after card is shown
 async function fetchAttrs(idx, blob){
