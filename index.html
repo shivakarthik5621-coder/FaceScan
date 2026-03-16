@@ -629,7 +629,7 @@ async function startScan(){
 
   try{
     const files=await driveList(fid);
-    addLog('Found '+files.length+' images — scanning…','in');
+    addLog('Found '+files.length+' images — threshold: '+CFG.thr.toFixed(2),'in');
     if(!files.length){ setPg(100,'No images in this folder.'); U.scanning=false; return; }
 
     let done=0;
