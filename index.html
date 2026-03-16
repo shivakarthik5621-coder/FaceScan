@@ -4,358 +4,319 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaceScan</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<script src="https://apis.google.com/js/api.js"></script>
-<script src="https://accounts.google.com/gsi/client"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,300&display=swap');
-
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 :root{
   --bg:#080810;--bg2:#0f0f1a;--bg3:#161624;
   --surface:#1c1c2e;--surface2:#23233a;
-  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.11);--border3:rgba(255,255,255,0.18);
-  --accent:#6c5ce7;--accent2:#a29bfe;--accent3:#ddd6fe;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.11);
+  --accent:#6c5ce7;--accent2:#a29bfe;
   --green:#00b894;--green2:#55efc4;
   --red:#e17055;--red2:#fab1a0;
-  --amber:#fdcb6e;--amber2:#ffeaa7;
+  --amber:#fdcb6e;
   --text:#ece9ff;--text2:#9d9abf;--text3:#4e4b6e;
   --mono:'DM Mono',monospace;--serif:'Fraunces',serif;
   --r-sm:6px;--r-md:10px;--r-lg:14px;--r-xl:20px;
 }
 html,body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh;overflow-x:hidden;}
-
-/* ─── GRID BG ─── */
 body::before{content:'';position:fixed;inset:0;
-  background-image:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(108,92,231,0.12),transparent),
-    linear-gradient(rgba(108,92,231,0.025) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(108,92,231,0.025) 1px,transparent 1px);
-  background-size:100% 100%,48px 48px,48px 48px;pointer-events:none;z-index:0;}
+  background-image:radial-gradient(ellipse 80% 50% at 50% -5%,rgba(108,92,231,0.13),transparent),
+  linear-gradient(rgba(108,92,231,0.022) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(108,92,231,0.022) 1px,transparent 1px);
+  background-size:100%,48px 48px,48px 48px;pointer-events:none;z-index:0;}
 
-/* ─── LAYOUT ─── */
-#app-user,#app-admin{position:relative;z-index:1;}
-.page{max-width:940px;margin:0 auto;padding:0 24px 100px;}
+/* ── LOADING ── */
+#loading{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;gap:16px;transition:opacity 0.4s;}
+#loading.hide{opacity:0;pointer-events:none;}
+.ld-logo{font-family:var(--serif);font-size:30px;font-weight:300;color:var(--text);}
+.ld-logo em{color:var(--accent2);font-style:italic;}
+.ld-bar{width:140px;height:2px;background:var(--surface2);border-radius:2px;overflow:hidden;}
+.ld-fill{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;animation:ldfill 1.8s ease forwards;}
+@keyframes ldfill{to{width:100%;}}
+.ld-status{font-size:11px;color:var(--text3);letter-spacing:0.5px;min-height:16px;text-align:center;}
 
-/* ─── HEADER ─── */
+/* ── LAYOUT ── */
+.page{position:relative;z-index:1;max-width:940px;margin:0 auto;padding:0 24px 100px;}
+
+/* ── HEADER ── */
 .header{display:flex;align-items:center;justify-content:space-between;padding:26px 0 44px;border-bottom:1px solid var(--border);margin-bottom:52px;}
-.logo{display:flex;align-items:center;gap:11px;text-decoration:none;}
+.logo{display:flex;align-items:center;gap:11px;text-decoration:none;cursor:pointer;}
 .logo-mark{width:38px;height:38px;border:1px solid var(--accent);border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;background:rgba(108,92,231,0.08);}
 .logo-mark svg{width:19px;height:19px;}
-.logo-wordmark{font-family:var(--serif);font-size:19px;font-weight:500;color:var(--text);letter-spacing:-0.3px;}
-.logo-wordmark em{color:var(--accent2);font-style:italic;}
-.header-right{display:flex;align-items:center;gap:10px;}
+.logo-word{font-family:var(--serif);font-size:19px;font-weight:500;color:var(--text);letter-spacing:-0.3px;}
+.logo-word em{color:var(--accent2);font-style:italic;}
 
-/* ─── BUTTONS ─── */
-.btn{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;letter-spacing:0.4px;padding:9px 18px;border-radius:var(--r-md);border:1px solid;cursor:pointer;transition:all 0.18s;white-space:nowrap;text-decoration:none;}
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;letter-spacing:0.4px;padding:9px 18px;border-radius:var(--r-md);border:1px solid;cursor:pointer;transition:all 0.18s;white-space:nowrap;text-decoration:none;background:transparent;}
 .btn svg{width:12px;height:12px;stroke:currentColor;flex-shrink:0;}
-.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;}
-.btn-primary:hover{background:var(--accent2);border-color:var(--accent2);color:var(--bg);}
+.btn-primary{background:var(--accent)!important;border-color:var(--accent)!important;color:#fff!important;}
+.btn-primary:hover{background:var(--accent2)!important;border-color:var(--accent2)!important;}
 .btn-primary:disabled{opacity:0.35;cursor:not-allowed;pointer-events:none;}
-.btn-ghost{background:transparent;border-color:var(--border2);color:var(--text2);}
+.btn-ghost{border-color:var(--border2);color:var(--text2);}
 .btn-ghost:hover{border-color:var(--accent);color:var(--accent2);}
-.btn-danger{background:transparent;border-color:rgba(225,112,85,0.3);color:var(--red);}
-.btn-danger:hover{background:rgba(225,112,85,0.08);border-color:var(--red);}
+.btn-danger{border-color:rgba(225,112,85,0.3);color:var(--red);}
+.btn-danger:hover{background:rgba(225,112,85,0.08)!important;border-color:var(--red)!important;}
 .btn-sm{padding:6px 12px;font-size:10px;}
-.btn-connected{border-color:var(--green)!important;color:var(--green)!important;}
+.btn-ok{border-color:var(--green)!important;color:var(--green)!important;}
 
-/* ─── PILL / BADGE ─── */
-.pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;padding:3px 10px;border-radius:20px;border:1px solid transparent;letter-spacing:0.3px;}
+/* ── PILL ── */
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;padding:3px 10px;border-radius:20px;border:1px solid;letter-spacing:0.3px;}
 .pill .dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0;}
-.pill-idle{border-color:var(--border2);color:var(--text3);}
-.pill-active{border-color:rgba(108,92,231,0.4);color:var(--accent2);background:rgba(108,92,231,0.08);}
-.pill-done{border-color:rgba(0,184,148,0.4);color:var(--green2);background:rgba(0,184,148,0.08);}
-.pill-error{border-color:rgba(225,112,85,0.4);color:var(--red2);background:rgba(225,112,85,0.08);}
-.pill-on{border-color:rgba(0,184,148,0.35);color:var(--green);background:rgba(0,184,148,0.08);}
-.pill-off{border-color:var(--border2);color:var(--text3);}
+.p-idle{border-color:var(--border2);color:var(--text3);}
+.p-run{border-color:rgba(108,92,231,0.4);color:var(--accent2);background:rgba(108,92,231,0.08);}
+.p-done{border-color:rgba(0,184,148,0.4);color:var(--green2);background:rgba(0,184,148,0.08);}
+.p-err{border-color:rgba(225,112,85,0.4);color:var(--red2);background:rgba(225,112,85,0.08);}
+.p-on{border-color:rgba(0,184,148,0.35);color:var(--green);}
+.p-off{border-color:var(--border2);color:var(--text3);}
 
-/* ─── CARD ─── */
+/* ── CARD ── */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);overflow:hidden;margin-bottom:20px;}
-.card-head{padding:16px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
-.card-label{font-size:10px;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;}
-.card-body{padding:28px 22px;}
+.card-head{padding:15px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.card-lbl{font-size:10px;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;}
+.card-body{padding:26px 22px;}
 
-/* ─── INPUTS ─── */
-.field{margin-bottom:16px;}
-.field-label{font-size:10px;letter-spacing:1px;color:var(--text3);text-transform:uppercase;margin-bottom:7px;display:block;}
-input[type=text],select,textarea{width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:12px;padding:10px 13px;border-radius:var(--r-md);outline:none;transition:border-color 0.18s;appearance:none;}
+/* ── INPUTS ── */
+.field{margin-bottom:14px;}
+.flbl{font-size:10px;letter-spacing:1px;color:var(--text3);text-transform:uppercase;margin-bottom:7px;display:block;}
+input[type=text],select{width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:12px;padding:10px 13px;border-radius:var(--r-md);outline:none;transition:border-color 0.18s;appearance:none;}
 input[type=text]:focus,select:focus{border-color:var(--accent);}
 input::placeholder{color:var(--text3);}
-select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%234e4b6e' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;cursor:pointer;padding-right:32px;}
-select option{background:var(--bg2);color:var(--text);}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%234e4b6e' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;}
+select option{background:var(--bg2);}
 
-/* ─── TOGGLE ─── */
+/* ── TOGGLE ── */
 .toggle{position:relative;display:inline-block;width:38px;height:21px;flex-shrink:0;}
 .toggle input{opacity:0;width:0;height:0;}
-.toggle-track{position:absolute;cursor:pointer;inset:0;background:var(--bg3);border:1px solid var(--border2);border-radius:21px;transition:all 0.2s;}
-.toggle-track::before{content:'';position:absolute;width:15px;height:15px;left:2px;top:2px;background:var(--text3);border-radius:50%;transition:all 0.2s;}
-.toggle input:checked+.toggle-track{background:rgba(0,184,148,0.15);border-color:rgba(0,184,148,0.4);}
-.toggle input:checked+.toggle-track::before{transform:translateX(17px);background:var(--green);}
+.ttrack{position:absolute;cursor:pointer;inset:0;background:var(--bg3);border:1px solid var(--border2);border-radius:21px;transition:all 0.2s;}
+.ttrack::before{content:'';position:absolute;width:15px;height:15px;left:2px;top:2px;background:var(--text3);border-radius:50%;transition:all 0.2s;}
+.toggle input:checked+.ttrack{background:rgba(0,184,148,0.15);border-color:rgba(0,184,148,0.4);}
+.toggle input:checked+.ttrack::before{transform:translateX(17px);background:var(--green);}
 
-/* ─── HERO ─── */
-.hero{text-align:center;padding:20px 0 60px;}
-.hero-eyebrow{font-size:10px;letter-spacing:2px;color:var(--accent2);text-transform:uppercase;margin-bottom:18px;}
-.hero h1{font-family:var(--serif);font-size:clamp(40px,7vw,68px);font-weight:300;line-height:1.05;letter-spacing:-1.5px;color:var(--text);margin-bottom:18px;}
+/* ── HERO ── */
+.hero{text-align:center;padding:16px 0 56px;}
+.hero-eye{font-size:10px;letter-spacing:2px;color:var(--accent2);text-transform:uppercase;margin-bottom:16px;}
+.hero h1{font-family:var(--serif);font-size:clamp(38px,7vw,66px);font-weight:300;line-height:1.06;letter-spacing:-1.5px;margin-bottom:16px;}
 .hero h1 em{color:var(--accent2);font-style:italic;}
-.hero-sub{font-size:13px;color:var(--text3);letter-spacing:0.3px;line-height:1.8;max-width:440px;margin:0 auto;}
+.hero-sub{font-size:13px;color:var(--text3);line-height:1.8;max-width:420px;margin:0 auto;}
 
-/* ─── STEPS ─── */
-.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:44px;}
-.step{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 18px;}
-.step-n{font-size:10px;color:var(--accent);letter-spacing:2px;margin-bottom:5px;text-transform:uppercase;}
-.step-t{font-size:12px;color:var(--text2);line-height:1.55;}
+/* ── STEPS ── */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:40px;}
+.step{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:15px 17px;}
+.sn{font-size:10px;color:var(--accent);letter-spacing:2px;margin-bottom:5px;text-transform:uppercase;}
+.st{font-size:12px;color:var(--text2);line-height:1.55;}
 
-/* ─── UPLOAD ZONE ─── */
-.upload-zone{border:1px dashed var(--border2);border-radius:var(--r-lg);padding:52px 24px;text-align:center;cursor:pointer;transition:all 0.22s;position:relative;overflow:hidden;}
-.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:rgba(108,92,231,0.04);}
-.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
-.upload-icon{width:50px;height:50px;border:1px solid var(--border2);border-radius:var(--r-md);margin:0 auto 14px;display:flex;align-items:center;justify-content:center;}
-.upload-icon svg{width:22px;height:22px;stroke:var(--accent2);}
-.upload-ttl{font-size:13px;color:var(--text);margin-bottom:5px;}
-.upload-sub{font-size:11px;color:var(--text3);}
+/* ── UPLOAD ── */
+.upzone{border:1px dashed var(--border2);border-radius:var(--r-lg);padding:50px 24px;text-align:center;cursor:pointer;transition:all 0.22s;position:relative;overflow:hidden;}
+.upzone:hover,.upzone.drag{border-color:var(--accent);background:rgba(108,92,231,0.04);}
+.upzone input{position:absolute;inset:0;opacity:0;cursor:pointer;}
+.up-ico{width:48px;height:48px;border:1px solid var(--border2);border-radius:var(--r-md);margin:0 auto 13px;display:flex;align-items:center;justify-content:center;}
+.up-ico svg{width:21px;height:21px;stroke:var(--accent2);}
+.up-ttl{font-size:13px;color:var(--text);margin-bottom:4px;}
+.up-sub{font-size:11px;color:var(--text3);}
 
-/* ─── PREVIEW ─── */
-#preview-wrap{display:none;gap:22px;align-items:flex-start;}
-#preview-wrap.show{display:flex;}
-.preview-frame{position:relative;flex-shrink:0;}
-#preview-canvas{width:176px;height:176px;border-radius:var(--r-lg);display:block;border:1px solid var(--border2);}
-#face-overlay{position:absolute;top:0;left:0;width:176px;height:176px;pointer-events:none;}
-.preview-info{flex:1;}
-.info-row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text2);margin-bottom:9px;}
-.info-row .lbl{color:var(--text3);min-width:76px;}
-.info-row .val{color:var(--text);}
-.face-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(0,184,148,0.08);border:1px solid rgba(0,184,148,0.3);color:var(--green2);font-size:11px;padding:4px 10px;border-radius:20px;margin-top:10px;}
+/* ── PREVIEW ── */
+#prev-wrap{display:none;gap:22px;align-items:flex-start;}
+#prev-wrap.show{display:flex;}
+.prev-frame{position:relative;flex-shrink:0;}
+#prev-canvas{width:176px;height:176px;border-radius:var(--r-lg);display:block;border:1px solid var(--border2);}
+#face-ov{position:absolute;top:0;left:0;width:176px;height:176px;pointer-events:none;}
+.prev-info{flex:1;}
+.irow{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text2);margin-bottom:8px;}
+.irow .lbl{color:var(--text3);min-width:72px;}
+.irow .val{color:var(--text);}
+.fbadge{display:inline-flex;align-items:center;gap:6px;background:rgba(0,184,148,0.08);border:1px solid rgba(0,184,148,0.3);color:var(--green2);font-size:11px;padding:4px 10px;border-radius:20px;margin-top:8px;}
 
-/* ─── PROGRESS ─── */
-.prog-wrap{background:var(--bg3);border-radius:4px;height:2px;overflow:hidden;margin:10px 0 7px;}
-.prog-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;transition:width 0.35s ease;width:0%;}
-.prog-text{font-size:11px;color:var(--text3);}
+/* ── PROGRESS ── */
+.prog-wrap{background:var(--bg3);border-radius:3px;height:2px;overflow:hidden;margin:10px 0 7px;}
+.prog-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;transition:width 0.3s;width:0%;}
+.prog-txt{font-size:11px;color:var(--text3);}
+.logbox{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-md);padding:11px 13px;font-size:10px;color:var(--text3);max-height:110px;overflow-y:auto;line-height:1.8;display:none;margin-top:11px;}
+.logbox.on{display:block;}
+.ll{margin-bottom:1px;}.ll.ok{color:var(--green2);}.ll.er{color:var(--red2);}.ll.in{color:var(--accent2);}
 
-/* ─── LOG ─── */
-.log-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-md);padding:12px 14px;font-size:10px;color:var(--text3);max-height:110px;overflow-y:auto;line-height:1.8;display:none;margin-top:12px;}
-.log-box.show{display:block;}
-.ll{margin-bottom:1px;}.ll.ok{color:var(--green2);}.ll.err{color:var(--red2);}.ll.info{color:var(--accent2);}
-
-/* ─── RESULTS ─── */
-.results-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
-.results-count{font-family:var(--serif);font-size:24px;font-weight:300;color:var(--text);}
-.results-count em{color:var(--accent2);font-style:italic;}
-.results-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;}
-.rc{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;transition:all 0.18s;}
+/* ── RESULTS ── */
+.rh{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.rcnt{font-family:var(--serif);font-size:24px;font-weight:300;}
+.rcnt em{color:var(--accent2);font-style:italic;}
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:11px;}
+.rc{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;transition:all 0.17s;}
 .rc:hover{border-color:var(--border2);transform:translateY(-2px);}
-.rc-img{position:relative;aspect-ratio:1;overflow:hidden;background:var(--bg3);}
-.rc-img img{width:100%;height:100%;object-fit:cover;display:block;}
-.rc-conf{position:absolute;top:7px;right:7px;background:rgba(8,8,16,0.88);border:1px solid var(--green);color:var(--green2);font-size:10px;padding:2px 8px;border-radius:20px;}
-.rc-foot{padding:10px 12px;display:flex;align-items:center;justify-content:space-between;}
-.rc-name{font-size:10px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px;}
-.rc-actions{display:flex;gap:5px;}
-.ib{width:26px;height:26px;border:1px solid var(--border2);background:transparent;border-radius:var(--r-sm);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.14s;}
+.rcimg{position:relative;aspect-ratio:1;overflow:hidden;background:var(--bg3);}
+.rcimg img{width:100%;height:100%;object-fit:cover;display:block;}
+.rcconf{position:absolute;top:7px;right:7px;background:rgba(8,8,16,0.88);border:1px solid var(--green);color:var(--green2);font-size:10px;padding:2px 8px;border-radius:20px;}
+.rcfoot{padding:9px 11px;display:flex;align-items:center;justify-content:space-between;}
+.rcname{font-size:10px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:105px;}
+.rcact{display:flex;gap:5px;}
+.ib{width:26px;height:26px;border:1px solid var(--border2);background:transparent;border-radius:var(--r-sm);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.13s;}
 .ib:hover{border-color:var(--accent);background:rgba(108,92,231,0.1);}
 .ib svg{width:12px;height:12px;stroke:var(--text2);}
 .ib:hover svg{stroke:var(--accent2);}
-.empty-state{text-align:center;padding:52px 0;color:var(--text3);}
-.empty-num{font-family:var(--serif);font-size:72px;font-weight:300;font-style:italic;color:var(--surface2);margin-bottom:6px;}
+.empty-st{text-align:center;padding:50px 0;color:var(--text3);}
+.empty-n{font-family:var(--serif);font-size:68px;font-weight:300;font-style:italic;color:var(--surface2);margin-bottom:6px;}
 
-/* ─── LIGHTBOX ─── */
+/* ── LIGHTBOX ── */
 #lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:200;align-items:center;justify-content:center;padding:20px;}
-#lb.show{display:flex;}
-.lb-inner{position:relative;max-width:820px;width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-xl);overflow:hidden;}
-.lb-img{width:100%;display:block;max-height:72vh;object-fit:contain;}
-.lb-foot{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border);}
-.lb-name{font-size:11px;color:var(--text2);}
-.lb-close{position:absolute;top:10px;right:10px;width:30px;height:30px;background:rgba(0,0,0,0.6);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.14s;}
-.lb-close:hover{border-color:var(--red);color:var(--red);}
+#lb.on{display:flex;}
+.lbi{position:relative;max-width:820px;width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-xl);overflow:hidden;}
+.lbimg{width:100%;display:block;max-height:72vh;object-fit:contain;}
+.lbfoot{padding:13px 17px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border);}
+.lbname{font-size:11px;color:var(--text2);}
+.lbclose{position:absolute;top:10px;right:10px;width:30px;height:30px;background:rgba(0,0,0,0.6);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.13s;}
+.lbclose:hover{border-color:var(--red);color:var(--red);}
 
-/* ─── NOTICE ─── */
-.notice{background:rgba(253,203,110,0.06);border:1px solid rgba(253,203,110,0.2);border-radius:var(--r-md);padding:12px 16px;font-size:11px;color:var(--amber);line-height:1.7;letter-spacing:0.3px;}
-.notice a{color:var(--accent2);text-decoration:none;}
-.notice a:hover{text-decoration:underline;}
+/* ── NOTICE ── */
+.notice{background:rgba(253,203,110,0.06);border:1px solid rgba(253,203,110,0.2);border-radius:var(--r-md);padding:12px 15px;font-size:11px;color:var(--amber);line-height:1.7;}
 
-/* ═══════════════════════════════════════
+/* ══════════════════════════
    ADMIN
-═══════════════════════════════════════ */
+══════════════════════════ */
 #app-admin{display:none;}
-.admin-layout{display:flex;min-height:100vh;}
-
-/* sidebar */
-.sidebar{width:210px;flex-shrink:0;border-right:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;padding:26px 0 20px;position:sticky;top:0;height:100vh;}
-.sb-logo{padding:0 18px 24px;border-bottom:1px solid var(--border);margin-bottom:16px;}
+.adm-layout{display:flex;min-height:100vh;}
+.sidebar{width:208px;flex-shrink:0;border-right:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;padding:24px 0 18px;position:sticky;top:0;height:100vh;}
+.sb-logo{padding:0 17px 22px;border-bottom:1px solid var(--border);margin-bottom:14px;}
 .sb-badge{display:inline-block;font-size:9px;letter-spacing:1.5px;padding:2px 8px;background:rgba(108,92,231,0.12);border:1px solid rgba(108,92,231,0.25);color:var(--accent);border-radius:20px;text-transform:uppercase;margin-top:5px;}
-.nav-item{display:flex;align-items:center;gap:9px;padding:10px 18px;font-size:12px;color:var(--text3);cursor:pointer;transition:all 0.14s;border-left:2px solid transparent;}
-.nav-item:hover{color:var(--text2);background:rgba(255,255,255,0.02);}
-.nav-item.active{color:var(--accent2);border-left-color:var(--accent);background:rgba(108,92,231,0.06);}
-.nav-item svg{width:13px;height:13px;stroke:currentColor;flex-shrink:0;}
-.sb-footer{margin-top:auto;padding:14px 18px 0;border-top:1px solid var(--border);}
-.sb-footer a{font-size:11px;color:var(--text3);text-decoration:none;display:flex;align-items:center;gap:7px;padding:7px 0;transition:color 0.14s;}
-.sb-footer a:hover{color:var(--accent2);}
-.sb-footer svg{width:11px;height:11px;stroke:currentColor;}
-
-/* admin main */
-.admin-main{flex:1;padding:36px 44px;overflow-y:auto;}
-.pg-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:32px;}
-.pg-title{font-family:var(--serif);font-size:28px;font-weight:300;color:var(--text);letter-spacing:-0.5px;line-height:1.2;}
-.pg-title em{color:var(--accent2);font-style:italic;}
-.pg-sub{font-size:11px;color:var(--text3);margin-top:5px;letter-spacing:0.3px;}
-
-/* stats */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:28px;}
-.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px 16px;}
-.stat-lbl{font-size:10px;letter-spacing:1px;color:var(--text3);text-transform:uppercase;margin-bottom:7px;}
-.stat-val{font-family:var(--serif);font-size:26px;font-weight:300;color:var(--text);}
-.stat-val.a{color:var(--accent2);}.stat-val.g{color:var(--green2);}.stat-val.r{color:var(--red2);}
-
-/* add panel */
-.add-panel{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px;display:none;margin-bottom:14px;}
-.add-panel.show{display:block;}
-.add-grid{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;}
-
-/* folder table */
+.nv{display:flex;align-items:center;gap:9px;padding:10px 17px;font-size:12px;color:var(--text3);cursor:pointer;transition:all 0.13s;border-left:2px solid transparent;}
+.nv:hover{color:var(--text2);background:rgba(255,255,255,0.02);}
+.nv.on{color:var(--accent2);border-left-color:var(--accent);background:rgba(108,92,231,0.06);}
+.nv svg{width:13px;height:13px;stroke:currentColor;flex-shrink:0;}
+.sb-foot{margin-top:auto;padding:13px 17px 0;border-top:1px solid var(--border);}
+.sb-foot a{font-size:11px;color:var(--text3);text-decoration:none;display:flex;align-items:center;gap:7px;padding:7px 0;transition:color 0.13s;}
+.sb-foot a:hover{color:var(--accent2);}
+.sb-foot svg{width:11px;height:11px;stroke:currentColor;}
+.adm-main{flex:1;padding:34px 42px;overflow-y:auto;}
+.pghdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:30px;}
+.pgtitle{font-family:var(--serif);font-size:27px;font-weight:300;letter-spacing:-0.5px;line-height:1.2;}
+.pgtitle em{color:var(--accent2);font-style:italic;}
+.pgsub{font-size:11px;color:var(--text3);margin-top:4px;}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:26px;}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:13px 15px;}
+.slbl{font-size:10px;letter-spacing:1px;color:var(--text3);text-transform:uppercase;margin-bottom:6px;}
+.sval{font-family:var(--serif);font-size:25px;font-weight:300;}
+.sval.a{color:var(--accent2);}.sval.g{color:var(--green2);}.sval.r{color:var(--red2);}
+.sec{margin-bottom:26px;}
+.sechdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.sectitle{font-size:10px;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;}
+.addpanel{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-lg);padding:17px;display:none;margin-bottom:13px;}
+.addpanel.on{display:block;}
+.addgrid{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;}
 .tbl{width:100%;border-collapse:collapse;}
-.tbl th{font-size:10px;letter-spacing:1px;color:var(--text3);text-transform:uppercase;text-align:left;padding:0 14px 11px;border-bottom:1px solid var(--border);}
-.tbl td{padding:13px 14px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.tbl th{font-size:10px;letter-spacing:1px;color:var(--text3);text-transform:uppercase;text-align:left;padding:0 13px 10px;border-bottom:1px solid var(--border);}
+.tbl td{padding:12px 13px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle;}
 .tbl tr:last-child td{border-bottom:none;}
-.tbl tr:hover td{background:rgba(255,255,255,0.012);}
-.folder-cell{display:flex;align-items:center;gap:11px;}
-.folder-ico{width:30px;height:30px;background:rgba(108,92,231,0.1);border:1px solid rgba(108,92,231,0.2);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-.folder-ico svg{width:13px;height:13px;stroke:var(--accent2);}
-.folder-ico.off{background:rgba(255,255,255,0.03);border-color:var(--border2);}
-.folder-ico.off svg{stroke:var(--text3);}
+.tbl tr:hover td{background:rgba(255,255,255,0.01);}
+.fcell{display:flex;align-items:center;gap:10px;}
+.fico{width:29px;height:29px;background:rgba(108,92,231,0.1);border:1px solid rgba(108,92,231,0.2);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.fico svg{width:12px;height:12px;stroke:var(--accent2);}
+.fico.off{background:rgba(255,255,255,0.03);border-color:var(--border2);}
+.fico.off svg{stroke:var(--text3);}
 .fn{color:var(--text);font-size:13px;}
-.fid{font-size:10px;color:var(--text3);margin-top:2px;}
-.act-cell{display:flex;gap:7px;align-items:center;}
+.acell{display:flex;gap:6px;align-items:center;}
+.tab-s{display:none;}.tab-s.on{display:block;}
+.cfggrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;}
+.actitem{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);}
+.actitem:last-child{border-bottom:none;}
+.adot{width:7px;height:7px;border-radius:50%;margin-top:4px;flex-shrink:0;}
+.adot.add{background:var(--green);}.adot.remove{background:var(--red);}.adot.toggle{background:var(--accent2);}
+.atime{font-size:10px;color:var(--text3);margin-top:2px;}
+.rtdot{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;animation:rtp 2s infinite;margin-right:2px;}
+@keyframes rtp{0%,100%{opacity:1;}50%{opacity:0.25;}}
 
-/* section */
-.sec{margin-bottom:28px;}
-.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px;}
-.sec-title{font-size:10px;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;}
-
-/* activity */
-.act-item{display:flex;gap:13px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--border);}
-.act-item:last-child{border-bottom:none;}
-.act-dot{width:7px;height:7px;border-radius:50%;margin-top:4px;flex-shrink:0;}
-.act-dot.add{background:var(--green);}.act-dot.remove{background:var(--red);}.act-dot.toggle{background:var(--accent2);}
-.act-time{font-size:10px;color:var(--text3);margin-top:2px;}
-
-/* toast */
-#toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);padding:11px 16px;font-size:11px;color:var(--text);z-index:999;transform:translateY(70px);opacity:0;transition:all 0.28s ease;display:flex;align-items:center;gap:9px;min-width:190px;box-shadow:0 8px 32px rgba(0,0,0,0.4);}
-#toast.show{transform:translateY(0);opacity:1;}
+/* ── TOAST ── */
+#toast{position:fixed;bottom:22px;right:22px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);padding:10px 15px;font-size:11px;color:var(--text);z-index:9999;transform:translateY(60px);opacity:0;transition:all 0.26s;display:flex;align-items:center;gap:8px;min-width:180px;pointer-events:none;}
+#toast.on{transform:translateY(0);opacity:1;}
 #toast.ok{border-left:2px solid var(--green);}
-#toast.err{border-left:2px solid var(--red);}
+#toast.er{border-left:2px solid var(--red);}
 #toast .tdot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
 #toast.ok .tdot{background:var(--green);}
-#toast.err .tdot{background:var(--red);}
+#toast.er .tdot{background:var(--red);}
 
-/* tab sections */
-.tab{display:none;}.tab.active{display:block;}
-
-/* config grid */
-.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-
-/* real-time indicator */
-.rt-dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 2s infinite;}
-@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.3;}}
-
-/* loading overlay */
-#loading{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;gap:16px;}
-.loading-logo{font-family:var(--serif);font-size:28px;font-weight:300;color:var(--text);}
-.loading-logo em{color:var(--accent2);font-style:italic;}
-.loading-bar{width:160px;height:2px;background:var(--surface);border-radius:2px;overflow:hidden;}
-.loading-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;width:0%;animation:load 1.4s ease forwards;}
-@keyframes load{to{width:100%;}}
-
-@media(max-width:700px){
+@media(max-width:680px){
   .steps{grid-template-columns:1fr;}
-  #preview-wrap.show{flex-direction:column;}
-  .results-grid{grid-template-columns:repeat(2,1fr);}
+  #prev-wrap.show{flex-direction:column;}
+  .rgrid{grid-template-columns:repeat(2,1fr);}
   .sidebar{display:none;}
-  .admin-main{padding:20px 16px;}
+  .adm-main{padding:18px 14px;}
   .stats{grid-template-columns:repeat(2,1fr);}
-  .add-grid{grid-template-columns:1fr;}
-  .cfg-grid{grid-template-columns:1fr;}
+  .addgrid{grid-template-columns:1fr;}
+  .cfggrid{grid-template-columns:1fr;}
 }
 </style>
 </head>
 <body>
 
-<!-- LOADING SCREEN -->
+<!-- LOADING -->
 <div id="loading">
-  <div class="loading-logo">Face<em>Scan</em></div>
-  <div class="loading-bar"><div class="loading-fill"></div></div>
+  <div class="ld-logo">Face<em>Scan</em></div>
+  <div class="ld-bar"><div class="ld-fill"></div></div>
+  <div class="ld-status" id="ld-status">Starting…</div>
 </div>
 
-<!-- ═══════════════════════════════════════════
+<!-- ══════════════════════════════════════
      USER APP
-═══════════════════════════════════════════ -->
+══════════════════════════════════════ -->
 <div id="app-user" style="display:none;">
 <div class="page">
   <div class="header">
-    <a class="logo" href="#">
+    <div class="logo" onclick="window.location.href=window.location.pathname">
       <div class="logo-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#a29bfe" stroke-width="1.5"><circle cx="12" cy="8" r="3.5"/><path d="M3 21c0-4.5 4-8 9-8s9 3.5 9 8"/><circle cx="12" cy="8" r="6" stroke-dasharray="2.5 2" stroke-opacity="0.3"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#a29bfe" stroke-width="1.5"><circle cx="12" cy="8" r="3.5"/><path d="M3 21c0-4.5 4-8 9-8s9 3.5 9 8"/><circle cx="12" cy="8" r="6" stroke-dasharray="2.5 2" opacity="0.3"/></svg>
       </div>
-      <span class="logo-wordmark">Face<em>Scan</em></span>
-    </a>
-    <div class="header-right">
+      <span class="logo-word">Face<em>Scan</em></span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
       <button class="btn btn-ghost" id="auth-btn" onclick="handleAuth()">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-        <span id="auth-label">Connect Drive</span>
+        <span id="auth-lbl">Connect Drive</span>
       </button>
     </div>
   </div>
 
   <div class="hero">
-    <div class="hero-eyebrow">AI · Face Recognition · Google Drive</div>
+    <div class="hero-eye">AI · Face Recognition · Google Drive</div>
     <h1>Find every photo<br>of <em>your face</em></h1>
-    <p class="hero-sub">Upload your selfie, pick a folder, and let the AI find every photo featuring your face — all processed privately in your browser.</p>
+    <p class="hero-sub">Upload your selfie, pick a folder, and let the AI find every photo featuring your face — processed privately in your browser.</p>
   </div>
 
   <div class="steps">
-    <div class="step"><div class="step-n">01 — connect</div><div class="step-t">Sign in with Google to access your Drive photos</div></div>
-    <div class="step"><div class="step-n">02 — upload</div><div class="step-t">Drop your selfie — face detection runs locally in your browser</div></div>
-    <div class="step"><div class="step-n">03 — download</div><div class="step-t">View and save every matched photo from the selected folder</div></div>
+    <div class="step"><div class="sn">01 — connect</div><div class="st">Sign in with Google to access Drive photos</div></div>
+    <div class="step"><div class="sn">02 — upload</div><div class="st">Drop your selfie — face detection runs locally, nothing is uploaded</div></div>
+    <div class="step"><div class="sn">03 — download</div><div class="st">View and save every matched photo from the folder</div></div>
   </div>
 
-  <!-- MAIN CARD -->
   <div class="card">
     <div class="card-head">
-      <span class="card-label">Scan your face</span>
-      <span class="pill pill-idle" id="u-status"><span class="dot"></span>waiting</span>
+      <span class="card-lbl">Scan your face</span>
+      <span class="pill p-idle" id="u-status"><span class="dot"></span>waiting</span>
     </div>
     <div class="card-body">
-
-      <!-- FOLDER SELECT -->
       <div class="field" style="margin-bottom:20px;">
-        <label class="field-label">Select folder to scan</label>
-        <div class="notice" id="no-folders-msg" style="display:none;">
-          No folders available yet. The administrator needs to configure folders first.
-        </div>
+        <label class="flbl">Select folder to scan</label>
+        <div class="notice" id="no-folders-msg" style="display:none;">No folders configured yet. The administrator needs to add folders first.</div>
         <select id="folder-sel" style="display:none;" onchange="updateScanBtn()">
           <option value="">— Choose a folder —</option>
         </select>
       </div>
-
-      <!-- UPLOAD ZONE -->
-      <div class="upload-zone" id="upload-zone">
-        <input type="file" id="file-input" accept="image/*" onchange="handleFile(event)">
-        <div class="upload-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
-        <div class="upload-ttl">Drop your photo here</div>
-        <div class="upload-sub">or click to browse · JPG PNG WEBP</div>
+      <div class="upzone" id="upzone">
+        <input type="file" id="file-in" accept="image/*" onchange="handleFile(event)">
+        <div class="up-ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div class="up-ttl">Drop your photo here</div>
+        <div class="up-sub">or click to browse · JPG PNG WEBP</div>
       </div>
-
-      <div id="preview-wrap">
-        <div class="preview-frame">
-          <canvas id="preview-canvas" width="176" height="176"></canvas>
-          <canvas id="face-overlay" width="176" height="176"></canvas>
+      <div id="prev-wrap">
+        <div class="prev-frame">
+          <canvas id="prev-canvas" width="176" height="176"></canvas>
+          <canvas id="face-ov" width="176" height="176"></canvas>
         </div>
-        <div class="preview-info">
-          <div class="info-row"><span class="lbl">file</span><span class="val" id="p-name">—</span></div>
-          <div class="info-row"><span class="lbl">size</span><span class="val" id="p-size">—</span></div>
-          <div class="info-row"><span class="lbl">face</span><span class="val" id="p-face">detecting…</span></div>
-          <div id="face-badge" class="face-badge" style="display:none;">
+        <div class="prev-info">
+          <div class="irow"><span class="lbl">file</span><span class="val" id="p-name">—</span></div>
+          <div class="irow"><span class="lbl">size</span><span class="val" id="p-size">—</span></div>
+          <div class="irow"><span class="lbl">face</span><span class="val" id="p-face">detecting…</span></div>
+          <div id="fbadge" class="fbadge" style="display:none;">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             Face detected
           </div>
-          <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;">
+          <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn btn-ghost" onclick="resetUpload()">Clear</button>
             <button class="btn btn-primary" id="scan-btn" onclick="startScan()" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -367,347 +328,312 @@ select option{background:var(--bg2);color:var(--text);}
     </div>
   </div>
 
-  <!-- PROGRESS CARD -->
-  <div id="prog-section" style="display:none;">
+  <div id="prog-sec" style="display:none;">
     <div class="card">
       <div class="card-head">
-        <span class="card-label">Scanning</span>
-        <span class="pill pill-active" id="scan-status"><span class="dot"></span>running</span>
+        <span class="card-lbl">Scanning</span>
+        <span class="pill p-run" id="scan-st"><span class="dot"></span>running</span>
       </div>
       <div class="card-body">
         <div class="prog-wrap"><div class="prog-fill" id="prog-fill"></div></div>
-        <div class="prog-text" id="prog-text">Initializing…</div>
-        <div class="log-box" id="log-box"></div>
+        <div class="prog-txt" id="prog-txt">Initializing…</div>
+        <div class="logbox" id="logbox"></div>
       </div>
     </div>
   </div>
 
-  <!-- RESULTS CARD -->
-  <div id="res-section" style="display:none;">
+  <div id="res-sec" style="display:none;">
     <div class="card">
       <div class="card-head">
-        <span class="card-label">Matched photos</span>
-        <span class="pill pill-done"><span class="dot"></span>complete</span>
+        <span class="card-lbl">Matched photos</span>
+        <span class="pill p-done"><span class="dot"></span>complete</span>
       </div>
       <div class="card-body">
-        <div class="results-hdr">
-          <div class="results-count" id="res-count">0 <em>matches</em></div>
-          <button class="btn btn-ghost" id="dl-all-btn" onclick="downloadAll()" style="display:none;">Download all</button>
+        <div class="rh">
+          <div class="rcnt" id="rcnt">0 <em>matches</em></div>
+          <button class="btn btn-ghost" id="dl-all" onclick="dlAll()" style="display:none;">Download all</button>
         </div>
-        <div class="results-grid" id="res-grid"></div>
-        <div class="empty-state" id="empty-state" style="display:none;">
-          <div class="empty-num">∅</div>
-          <div style="font-size:12px;">No matching faces found in this folder</div>
+        <div class="rgrid" id="rgrid"></div>
+        <div class="empty-st" id="empty-st" style="display:none;">
+          <div class="empty-n">∅</div>
+          <div style="font-size:12px;">No matching faces found</div>
         </div>
       </div>
     </div>
   </div>
+</div>
+</div>
 
-</div><!-- /page -->
-</div><!-- /app-user -->
-
-<!-- ═══════════════════════════════════════════
+<!-- ══════════════════════════════════════
      ADMIN APP
-═══════════════════════════════════════════ -->
-<div id="app-admin" style="display:none;">
-<div class="admin-layout">
-
-  <!-- SIDEBAR -->
+══════════════════════════════════════ -->
+<div id="app-admin">
+<div class="adm-layout">
   <div class="sidebar">
     <div class="sb-logo">
-      <div style="display:flex;align-items:center;gap:9px;margin-bottom:5px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
         <div class="logo-mark" style="width:28px;height:28px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="#a29bfe" stroke-width="1.5" width="13" height="13"><circle cx="12" cy="8" r="3.5"/><path d="M3 21c0-4.5 4-8 9-8s9 3.5 9 8"/></svg>
         </div>
-        <span class="logo-wordmark" style="font-size:16px;">Face<em>Scan</em></span>
+        <span class="logo-word" style="font-size:16px;">Face<em>Scan</em></span>
       </div>
       <div class="sb-badge">admin panel</div>
     </div>
-    <div class="nav-item active" data-tab="folders" onclick="showAdminTab('folders',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-      Folders
+    <div class="nv on" onclick="showTab('folders',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Folders
     </div>
-    <div class="nav-item" data-tab="config" onclick="showAdminTab('config',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
-      Configuration
+    <div class="nv" onclick="showTab('config',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>Configuration
     </div>
-    <div class="nav-item" data-tab="activity" onclick="showAdminTab('activity',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      Activity
+    <div class="nv" onclick="showTab('activity',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Activity
     </div>
-    <div class="sb-footer">
+    <div class="sb-foot">
       <a href="#" onclick="goUser();return false;">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        User app
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>User app
       </a>
-      <a href="https://shivakarthik5621-coder.github.io/FaceScan/?admin" style="font-size:10px;color:var(--text3);">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>
-        <span class="rt-dot"></span> Live sync on
+      <a href="#" style="font-size:10px;">
+        <span class="rtdot"></span>Live sync active
       </a>
     </div>
   </div>
 
-  <!-- MAIN -->
-  <div class="admin-main">
-
-    <!-- FOLDERS TAB -->
-    <div id="tab-folders" class="tab active">
-      <div class="pg-hdr">
+  <div class="adm-main">
+    <!-- FOLDERS -->
+    <div id="tab-folders" class="tab-s on">
+      <div class="pghdr">
         <div>
-          <div class="pg-title">Drive <em>folders</em></div>
-          <div class="pg-sub">Manage which Google Drive folders are available to users · changes sync instantly</div>
+          <div class="pgtitle">Drive <em>folders</em></div>
+          <div class="pgsub">Manage folders · changes sync to all users instantly</div>
         </div>
         <button class="btn btn-ghost" id="a-auth-btn" onclick="handleAdminAuth()">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-          <span id="a-auth-label">Connect Drive (optional)</span>
+          <span id="a-auth-lbl">Connect Drive (for Picker)</span>
         </button>
       </div>
-
       <div class="stats">
-        <div class="stat"><div class="stat-lbl">Total</div><div class="stat-val a" id="s-total">0</div></div>
-        <div class="stat"><div class="stat-lbl">Active</div><div class="stat-val g" id="s-active">0</div></div>
-        <div class="stat"><div class="stat-lbl">Inactive</div><div class="stat-val r" id="s-inactive">0</div></div>
-        <div class="stat"><div class="stat-lbl">Last change</div><div class="stat-val" id="s-last" style="font-size:13px;padding-top:5px;">—</div></div>
+        <div class="stat"><div class="slbl">Total</div><div class="sval a" id="s-total">0</div></div>
+        <div class="stat"><div class="slbl">Active</div><div class="sval g" id="s-active">0</div></div>
+        <div class="stat"><div class="slbl">Inactive</div><div class="sval r" id="s-inactive">0</div></div>
+        <div class="stat"><div class="slbl">Last change</div><div class="sval" id="s-last" style="font-size:13px;padding-top:4px;">—</div></div>
       </div>
-
-      <!-- ADD PANEL -->
-      <div class="add-panel" id="add-panel">
-        <div class="field-label" style="margin-bottom:12px;">Add new folder</div>
-        <div class="add-grid">
-          <div class="field" style="margin:0;">
-            <label class="field-label">Display name</label>
-            <input type="text" id="new-name" placeholder="Event photos 2024">
-          </div>
-          <div class="field" style="margin:0;">
-            <label class="field-label">Google Drive Folder ID</label>
-            <input type="text" id="new-fid" placeholder="1BxiMVs0XRA5nFMd…">
-          </div>
+      <div class="addpanel" id="addpanel">
+        <div class="flbl" style="margin-bottom:11px;">Add new folder</div>
+        <div class="addgrid">
+          <div class="field" style="margin:0;"><label class="flbl">Display name</label><input type="text" id="new-name" placeholder="Event Photos 2024"></div>
+          <div class="field" style="margin:0;"><label class="flbl">Google Drive Folder ID</label><input type="text" id="new-fid" placeholder="1BxiMVs0XRA5nFMd…"></div>
           <div style="display:flex;gap:7px;padding-bottom:1px;">
             <button class="btn btn-primary" onclick="addFolder()">
-              <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add
             </button>
             <button class="btn btn-ghost" onclick="pickFolder()">
-              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-              Pick
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Pick
             </button>
           </div>
         </div>
-        <div style="font-size:10px;color:var(--text3);margin-top:9px;line-height:1.6;">
-          Folder ID is in the Drive URL: drive.google.com/drive/folders/<strong style="color:var(--accent2);">YOUR_FOLDER_ID</strong>
-        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.6;">Folder ID is in the Drive URL: drive.google.com/drive/folders/<strong style="color:var(--accent2);">FOLDER_ID</strong></div>
       </div>
-
       <div class="sec">
-        <div class="sec-hdr">
-          <div class="sec-title">Configured folders</div>
-          <button class="btn btn-primary btn-sm" onclick="toggleAddPanel()">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add folder
+        <div class="sechdr">
+          <div class="sectitle">Configured folders</div>
+          <button class="btn btn-primary btn-sm" onclick="document.getElementById('addpanel').classList.toggle('on')">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add folder
           </button>
         </div>
         <div class="card">
-          <div id="folders-empty" style="text-align:center;padding:44px;color:var(--text3);font-size:12px;">
-            <div style="font-family:var(--serif);font-size:48px;font-weight:300;font-style:italic;color:var(--surface2);margin-bottom:8px;">∅</div>
+          <div id="f-empty" style="text-align:center;padding:42px;color:var(--text3);font-size:12px;">
+            <div style="font-family:var(--serif);font-size:46px;font-weight:300;font-style:italic;color:var(--surface2);margin-bottom:7px;">∅</div>
             No folders yet. Add your first folder above.
           </div>
-          <table class="tbl" id="folders-tbl" style="display:none;">
-            <thead><tr>
-              <th>Folder</th><th>Folder ID</th><th>Added</th><th>Status</th><th>Active</th><th></th>
-            </tr></thead>
-            <tbody id="folders-tbody"></tbody>
+          <table class="tbl" id="f-tbl" style="display:none;">
+            <thead><tr><th>Folder</th><th>Folder ID</th><th>Added</th><th>Status</th><th>Active</th><th></th></tr></thead>
+            <tbody id="f-tbody"></tbody>
           </table>
         </div>
       </div>
     </div>
 
-    <!-- CONFIG TAB -->
-    <div id="tab-config" class="tab">
-      <div class="pg-hdr">
-        <div>
-          <div class="pg-title">App <em>configuration</em></div>
-          <div class="pg-sub">Google API credentials and scan settings</div>
-        </div>
-      </div>
-
+    <!-- CONFIG -->
+    <div id="tab-config" class="tab-s">
+      <div class="pghdr"><div><div class="pgtitle">App <em>configuration</em></div><div class="pgsub">Google API credentials synced to Supabase</div></div></div>
       <div class="sec">
-        <div class="sec-hdr"><div class="sec-title">Google Cloud credentials</div></div>
-        <div class="card">
-          <div class="card-body">
-            <div class="cfg-grid">
-              <div class="field">
-                <label class="field-label">OAuth Client ID</label>
-                <input type="text" id="cfg-cid" placeholder="xxxxxxx.apps.googleusercontent.com">
-              </div>
-              <div class="field">
-                <label class="field-label">API Key</label>
-                <input type="text" id="cfg-akey" placeholder="AIza…">
-              </div>
-            </div>
-            <div style="display:flex;gap:8px;margin-top:4px;">
-              <button class="btn btn-primary" onclick="saveGoogleCfg()">Save credentials</button>
-            </div>
-            <div style="font-size:10px;color:var(--text3);margin-top:12px;line-height:1.7;">
-              These are saved to Supabase and synced to all devices. Authorized origin: <code style="color:var(--accent2);background:var(--bg3);padding:1px 5px;border-radius:4px;">https://shivakarthik5621-coder.github.io</code>
-            </div>
+        <div class="sechdr"><div class="sectitle">Google Cloud credentials</div></div>
+        <div class="card"><div class="card-body">
+          <div class="cfggrid">
+            <div class="field"><label class="flbl">OAuth Client ID</label><input type="text" id="cfg-cid" placeholder="xxxxxxx.apps.googleusercontent.com"></div>
+            <div class="field"><label class="flbl">API Key</label><input type="text" id="cfg-akey" placeholder="AIza…"></div>
           </div>
-        </div>
+          <button class="btn btn-primary" onclick="saveCreds()">Save credentials</button>
+          <div style="font-size:10px;color:var(--text3);margin-top:11px;line-height:1.7;">Saved to Supabase · synced to all devices · Authorized origin: <code style="color:var(--accent2);background:var(--bg3);padding:1px 5px;border-radius:4px;">https://shivakarthik5621-coder.github.io</code></div>
+        </div></div>
       </div>
-
       <div class="sec">
-        <div class="sec-hdr"><div class="sec-title">Face match threshold</div></div>
-        <div class="card">
-          <div class="card-body">
-            <div style="max-width:400px;">
-              <div class="field-label">Sensitivity (0.3 strict → 0.7 loose)</div>
-              <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
-                <input type="range" id="thresh-slider" min="30" max="70" value="50" style="flex:1;height:3px;background:var(--bg3);border-radius:3px;border:none;padding:0;cursor:pointer;" oninput="document.getElementById('thresh-val').textContent=(this.value/100).toFixed(2)">
-                <span style="font-size:14px;font-weight:500;color:var(--accent2);min-width:34px;" id="thresh-val">0.50</span>
-              </div>
-              <div style="font-size:10px;color:var(--text3);margin-top:7px;">Lower = stricter, fewer false positives. Default 0.50</div>
+        <div class="sechdr"><div class="sectitle">Face match threshold</div></div>
+        <div class="card"><div class="card-body">
+          <div style="max-width:380px;">
+            <div class="flbl">Sensitivity (0.3 strict → 0.7 loose)</div>
+            <div style="display:flex;align-items:center;gap:14px;margin-top:9px;">
+              <input type="range" id="thresh" min="30" max="70" value="50" style="flex:1;height:3px;background:var(--bg3);border-radius:3px;border:none;padding:0;cursor:pointer;" oninput="document.getElementById('thresh-val').textContent=(this.value/100).toFixed(2)">
+              <span style="font-size:14px;font-weight:500;color:var(--accent2);min-width:34px;" id="thresh-val">0.50</span>
             </div>
-            <div style="margin-top:18px;">
-              <button class="btn btn-primary" onclick="saveThreshold()">Save threshold</button>
-            </div>
+            <div style="font-size:10px;color:var(--text3);margin-top:6px;">Lower = stricter, fewer false positives. Default 0.50</div>
           </div>
-        </div>
+          <div style="margin-top:16px;"><button class="btn btn-primary" onclick="saveThreshold()">Save threshold</button></div>
+        </div></div>
       </div>
-
       <div class="sec">
-        <div class="sec-hdr"><div class="sec-title">Data</div></div>
-        <div class="card">
-          <div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button class="btn btn-ghost" onclick="exportFolders()">
-              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Export folders JSON
-            </button>
-            <button class="btn btn-danger" onclick="confirmClearAll()">
-              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
-              Clear all folders
-            </button>
-          </div>
-        </div>
+        <div class="sechdr"><div class="sectitle">Data</div></div>
+        <div class="card"><div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-ghost" onclick="exportFolders()">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export JSON
+          </button>
+          <button class="btn btn-danger" onclick="clearAll()">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>Clear all folders
+          </button>
+        </div></div>
       </div>
     </div>
 
-    <!-- ACTIVITY TAB -->
-    <div id="tab-activity" class="tab">
-      <div class="pg-hdr">
-        <div>
-          <div class="pg-title">Activity <em>log</em></div>
-          <div class="pg-sub">All folder changes — synced from Supabase</div>
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="clearActivity()">Clear</button>
+    <!-- ACTIVITY -->
+    <div id="tab-activity" class="tab-s">
+      <div class="pghdr">
+        <div><div class="pgtitle">Activity <em>log</em></div><div class="pgsub">All folder changes synced from Supabase</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="clearAct()">Clear</button>
       </div>
-      <div class="card">
-        <div class="card-body" id="activity-list">
-          <div style="text-align:center;padding:40px 0;color:var(--text3);font-size:12px;">No activity yet.</div>
-        </div>
-      </div>
+      <div class="card"><div class="card-body" id="act-list"><div style="text-align:center;padding:38px 0;color:var(--text3);font-size:12px;">No activity yet.</div></div></div>
     </div>
-
-  </div><!-- /admin-main -->
-</div><!-- /admin-layout -->
-</div><!-- /app-admin -->
+  </div>
+</div>
+</div>
 
 <!-- LIGHTBOX -->
 <div id="lb" onclick="closeLb(event)">
-  <div class="lb-inner">
-    <button class="lb-close" onclick="closeLb(null,true)">✕</button>
-    <img id="lb-img" class="lb-img" src="" alt="">
-    <div class="lb-foot">
-      <span class="lb-name" id="lb-name"></span>
+  <div class="lbi">
+    <button class="lbclose" onclick="closeLb(null,true)">✕</button>
+    <img id="lb-img" class="lbimg" src="" alt="">
+    <div class="lbfoot">
+      <span class="lbname" id="lb-name"></span>
       <button class="btn btn-primary btn-sm" id="lb-dl">Download</button>
     </div>
   </div>
 </div>
 
-<!-- TOAST -->
 <div id="toast"><span class="tdot"></span><span id="toast-msg"></span></div>
 
+<!-- ══ SCRIPTS — loaded dynamically to guarantee order ══ -->
 <script>
-// ════════════════════════════════════════════════
-//  CONSTANTS
-// ════════════════════════════════════════════════
-const SUPABASE_URL  = 'https://mksnsgrlajrexkfdxjqg.supabase.co';
-const SUPABASE_KEY  = 'sb_publishable_C_Fl1V487V0RQPTtaKLI8A_7U7dtYJm';
-const MODELS_URL    = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model';
-const DRIVE_SCOPE   = 'https://www.googleapis.com/auth/drive.readonly';
-const GITHUB_ORIGIN = 'https://shivakarthik5621-coder.github.io';
+// ═══════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════
+const SB_URL  = 'https://mksnsgrlajrexkfdxjqg.supabase.co';
+const SB_KEY  = 'sb_publishable_C_Fl1V487V0RQPTtaKLI8A_7U7dtYJm';
+const MDL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model';
+const SCOPE   = 'https://www.googleapis.com/auth/drive.readonly';
 
-// ════════════════════════════════════════════════
-//  SUPABASE CLIENT
-// ════════════════════════════════════════════════
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let sb, appCfg = { clientId:'', apiKey:'', threshold:0.5 };
+let uState = { desc:null, token:null, tc:null, loaded:false, scanning:false, results:[] };
+let aState = { token:null, tc:null, folders:[], activity:[] };
+const isAdmin = location.search.includes('admin');
 
-// ════════════════════════════════════════════════
-//  SHARED STATE
-// ════════════════════════════════════════════════
-let appCfg = { clientId: '', apiKey: '', threshold: 0.5 };
-let userState = {
-  faceDescriptor: null,
-  accessToken: null,
-  tokenClient: null,
-  faceapiLoaded: false,
-  scanning: false,
-  results: [],
-};
-let adminState = {
-  accessToken: null,
-  tokenClient: null,
-  folders: [],
-  activity: [],
-};
-let isAdmin = false;
+// ═══════════════════════════════════════════
+//  DYNAMIC SCRIPT LOADER
+// ═══════════════════════════════════════════
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.async = false;
+    s.onload = res;
+    s.onerror = () => rej(new Error('Failed: ' + src));
+    document.head.appendChild(s);
+  });
+}
 
-// ════════════════════════════════════════════════
-//  BOOT
-// ════════════════════════════════════════════════
-window.addEventListener('load', async () => {
-  isAdmin = window.location.search.includes('admin');
-  await loadAppConfig();
-  if (isAdmin) { bootAdmin(); } else { bootUser(); }
-  document.getElementById('loading').style.display = 'none';
-  document.getElementById(isAdmin ? 'app-admin' : 'app-user').style.display = '';
-});
+function setStatus(msg) {
+  document.getElementById('ld-status').textContent = msg;
+}
+
+function hideLoading() {
+  const el = document.getElementById('loading');
+  el.classList.add('hide');
+  setTimeout(() => el.style.display = 'none', 450);
+}
+
+// ═══════════════════════════════════════════
+//  BOOT — waits for all scripts before running
+// ═══════════════════════════════════════════
+async function boot() {
+  try {
+    setStatus('Loading libraries…');
+    await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js');
+    setStatus('Loading face detection…');
+    await loadScript('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js');
+    setStatus('Loading Google APIs…');
+    await loadScript('https://apis.google.com/js/api.js');
+    await loadScript('https://accounts.google.com/gsi/client');
+
+    setStatus('Connecting to database…');
+    sb = supabase.createClient(SB_URL, SB_KEY);
+
+    setStatus('Loading config…');
+    await loadAppConfig();
+
+    if (isAdmin) {
+      setStatus('Loading admin panel…');
+      document.getElementById('app-admin').style.display = '';
+      bootAdmin();
+    } else {
+      setStatus('Ready!');
+      document.getElementById('app-user').style.display = '';
+      bootUser();
+    }
+
+    hideLoading();
+  } catch(e) {
+    document.getElementById('ld-status').textContent = 'Error: ' + e.message + ' — Try refreshing.';
+    document.getElementById('ld-status').style.color = '#fab1a0';
+    console.error('Boot error:', e);
+  }
+}
 
 async function loadAppConfig() {
   try {
-    const { data } = await sb.from('app_config').select('*');
-    if (data) data.forEach(row => {
-      if (row.key === 'google_client_id') appCfg.clientId = row.value;
-      if (row.key === 'google_api_key')   appCfg.apiKey   = row.value;
-      if (row.key === 'match_threshold')  appCfg.threshold = parseFloat(row.value);
+    const { data, error } = await sb.from('app_config').select('*');
+    if (error) { console.warn('Config error:', error.message); return; }
+    if (data) data.forEach(r => {
+      if (r.key === 'google_client_id') appCfg.clientId = r.value;
+      if (r.key === 'google_api_key')   appCfg.apiKey   = r.value;
+      if (r.key === 'match_threshold')  appCfg.threshold = parseFloat(r.value);
     });
     if (appCfg.clientId) document.getElementById('cfg-cid').value = appCfg.clientId;
     if (appCfg.apiKey)   document.getElementById('cfg-akey').value = appCfg.apiKey;
     const pct = Math.round(appCfg.threshold * 100);
-    document.getElementById('thresh-slider').value = pct;
+    document.getElementById('thresh').value = pct;
     document.getElementById('thresh-val').textContent = appCfg.threshold.toFixed(2);
-  } catch(e) { console.warn('Config load:', e); }
+  } catch(e) { console.warn('loadAppConfig:', e); }
 }
 
-// ════════════════════════════════════════════════
+// kick off on DOMContentLoaded — don't wait for window.load
+document.addEventListener('DOMContentLoaded', boot);
+
+// ═══════════════════════════════════════════
 //  USER BOOT
-// ════════════════════════════════════════════════
-async function bootUser() {
+// ═══════════════════════════════════════════
+function bootUser() {
   initUserAuth();
-  await loadFoldersForUser();
-  // real-time: re-load folders when admin changes them
-  sb.channel('folders-watch')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'folders' }, () => loadFoldersForUser())
+  loadFoldersUser();
+  sb.channel('folders-rt')
+    .on('postgres_changes', { event:'*', schema:'public', table:'folders' }, () => loadFoldersUser())
     .subscribe();
 }
 
-async function loadFoldersForUser() {
+async function loadFoldersUser() {
   try {
     const { data, error } = await sb.from('folders').select('*').eq('active', true).order('created_at');
     if (error) throw error;
     const sel = document.getElementById('folder-sel');
     const notice = document.getElementById('no-folders-msg');
-    if (!data || !data.length) { notice.style.display = ''; sel.style.display = 'none'; return; }
-    notice.style.display = 'none';
-    sel.style.display = '';
+    if (!data || !data.length) { notice.style.display=''; sel.style.display='none'; return; }
+    notice.style.display='none'; sel.style.display='';
     const prev = sel.value;
     sel.innerHTML = '<option value="">— Choose a folder —</option>';
     data.forEach(f => {
@@ -717,494 +643,359 @@ async function loadFoldersForUser() {
       sel.appendChild(o);
     });
     updateScanBtn();
-  } catch(e) { console.warn('Folders load:', e); }
+  } catch(e) { console.warn('loadFoldersUser:', e); }
 }
 
-// ════════════════════════════════════════════════
-//  USER GOOGLE AUTH
-// ════════════════════════════════════════════════
+// ── User Auth ──
 function initUserAuth() {
   if (!appCfg.clientId) return;
   try {
-    userState.tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: appCfg.clientId, scope: DRIVE_SCOPE,
+    uState.tc = google.accounts.oauth2.initTokenClient({
+      client_id: appCfg.clientId, scope: SCOPE,
       callback: r => {
-        if (r.error) { addLog('Auth error: '+r.error,'err'); return; }
-        userState.accessToken = r.access_token;
-        document.getElementById('auth-btn').classList.add('btn-connected');
-        document.getElementById('auth-label').textContent = 'Drive connected';
-        addLog('Google Drive connected.','ok'); updateScanBtn();
+        if (r.error) { log('Auth error: '+r.error,'er'); return; }
+        uState.token = r.access_token;
+        document.getElementById('auth-btn').classList.add('btn-ok');
+        document.getElementById('auth-lbl').textContent = 'Drive connected';
+        log('Google Drive connected.','ok'); updateScanBtn();
       }
     });
-  } catch(e) { console.warn('Auth init:', e); }
+  } catch(e) { console.warn('initUserAuth:', e); }
 }
-
 function handleAuth() {
-  if (userState.accessToken) {
-    userState.accessToken = null;
-    document.getElementById('auth-btn').classList.remove('btn-connected');
-    document.getElementById('auth-label').textContent = 'Connect Drive';
+  if (uState.token) {
+    uState.token = null;
+    document.getElementById('auth-btn').classList.remove('btn-ok');
+    document.getElementById('auth-lbl').textContent = 'Connect Drive';
     updateScanBtn(); return;
   }
-  if (!appCfg.clientId) { alert('App not configured yet. Please contact the administrator.'); return; }
-  if (!userState.tokenClient) initUserAuth();
-  userState.tokenClient.requestAccessToken({ prompt: 'consent' });
+  if (!appCfg.clientId) { alert('App not configured. Contact the administrator.'); return; }
+  if (!uState.tc) initUserAuth();
+  uState.tc.requestAccessToken({ prompt:'consent' });
 }
 
-// ════════════════════════════════════════════════
-//  FACE API
-// ════════════════════════════════════════════════
+// ── Face API ──
 async function loadFaceAPI() {
-  if (userState.faceapiLoaded) return;
-  addLog('Loading face models…','info');
+  if (uState.loaded) return;
+  log('Loading face models…','in');
   await Promise.all([
-    faceapi.nets.ssdMobilenetv1.loadFromUri(MODELS_URL),
-    faceapi.nets.faceLandmark68Net.loadFromUri(MODELS_URL),
-    faceapi.nets.faceRecognitionNet.loadFromUri(MODELS_URL),
+    faceapi.nets.ssdMobilenetv1.loadFromUri(MDL_URL),
+    faceapi.nets.faceLandmark68Net.loadFromUri(MDL_URL),
+    faceapi.nets.faceRecognitionNet.loadFromUri(MDL_URL),
   ]);
-  userState.faceapiLoaded = true;
-  addLog('Face models ready.','ok');
+  uState.loaded = true;
+  log('Models ready.','ok');
 }
 
-// ════════════════════════════════════════════════
-//  UPLOAD + DETECTION
-// ════════════════════════════════════════════════
-function handleFile(e) { const f = e.target.files[0]; if(f) processFile(f); }
-
-const uz = document.getElementById('upload-zone');
+// ── Upload ──
+function handleFile(e) { const f=e.target.files[0]; if(f) processFile(f); }
+const uz = document.getElementById('upzone');
 uz.addEventListener('dragover', e => { e.preventDefault(); uz.classList.add('drag'); });
 uz.addEventListener('dragleave', () => uz.classList.remove('drag'));
-uz.addEventListener('drop', e => {
-  e.preventDefault(); uz.classList.remove('drag');
-  const f = e.dataTransfer.files[0];
-  if (f && f.type.startsWith('image/')) processFile(f);
-});
+uz.addEventListener('drop', e => { e.preventDefault(); uz.classList.remove('drag'); const f=e.dataTransfer.files[0]; if(f&&f.type.startsWith('image/')) processFile(f); });
 
 async function processFile(file) {
-  document.getElementById('p-name').textContent = file.name.length > 22 ? file.name.slice(0,20)+'…' : file.name;
+  document.getElementById('p-name').textContent = file.name.length>22 ? file.name.slice(0,20)+'…' : file.name;
   document.getElementById('p-size').textContent = (file.size/1024).toFixed(0)+' KB';
   document.getElementById('p-face').textContent = 'detecting…';
-  document.getElementById('face-badge').style.display = 'none';
-  setPill('u-status','active','processing');
-  uz.style.display = 'none';
-  document.getElementById('preview-wrap').classList.add('show');
-
+  document.getElementById('fbadge').style.display = 'none';
+  setPill('u-status','run','processing');
+  uz.style.display='none';
+  document.getElementById('prev-wrap').classList.add('show');
   const img = new Image();
   img.onload = async () => {
-    const cv = document.getElementById('preview-canvas');
-    const ctx = cv.getContext('2d');
-    const s = 176;
-    const r = Math.min(s/img.width, s/img.height);
-    const w = img.width*r, h = img.height*r;
-    const ox = (s-w)/2, oy = (s-h)/2;
-    ctx.clearRect(0,0,s,s); ctx.drawImage(img, ox, oy, w, h);
+    const cv=document.getElementById('prev-canvas'), ctx=cv.getContext('2d'), S=176;
+    const r=Math.min(S/img.width,S/img.height), w=img.width*r, h=img.height*r, ox=(S-w)/2, oy=(S-h)/2;
+    ctx.clearRect(0,0,S,S); ctx.drawImage(img,ox,oy,w,h);
     showLog();
     try {
       await loadFaceAPI();
       const det = await faceapi.detectSingleFace(cv).withFaceLandmarks().withFaceDescriptor();
-      const oc = document.getElementById('face-overlay').getContext('2d');
-      oc.clearRect(0,0,s,s);
+      const oc = document.getElementById('face-ov').getContext('2d'); oc.clearRect(0,0,S,S);
       if (det) {
-        userState.faceDescriptor = det.descriptor;
-        const b = det.detection.box, sx = w/img.width, sy = h/img.height;
-        const bx = ox+b.x*sx, by = oy+b.y*sy, bw = b.width*sx, bh = b.height*sy;
-        oc.strokeStyle = '#6c5ce7'; oc.lineWidth = 1.5;
-        oc.strokeRect(bx, by, bw, bh);
-        oc.fillStyle = 'rgba(108,92,231,0.09)'; oc.fillRect(bx, by, bw, bh);
-        document.getElementById('p-face').textContent = '1 face detected';
-        document.getElementById('face-badge').style.display = 'inline-flex';
+        uState.desc = det.descriptor;
+        const b=det.detection.box, sx=w/img.width, sy=h/img.height;
+        const bx=ox+b.x*sx, by=oy+b.y*sy, bw=b.width*sx, bh=b.height*sy;
+        oc.strokeStyle='#6c5ce7'; oc.lineWidth=1.5; oc.strokeRect(bx,by,bw,bh);
+        oc.fillStyle='rgba(108,92,231,0.09)'; oc.fillRect(bx,by,bw,bh);
+        document.getElementById('p-face').textContent='1 face detected';
+        document.getElementById('fbadge').style.display='inline-flex';
         setPill('u-status','done','ready');
-        addLog('Face descriptor extracted.','ok');
+        log('Face descriptor extracted.','ok');
       } else {
-        userState.faceDescriptor = null;
-        document.getElementById('p-face').textContent = 'No face found';
-        setPill('u-status','error','no face');
-        addLog('No face detected — try a clearer selfie.','err');
+        uState.desc=null;
+        document.getElementById('p-face').textContent='No face detected';
+        setPill('u-status','err','no face');
+        log('No face found — try a clearer selfie.','er');
       }
-    } catch(e) { addLog('Detection error: '+e.message,'err'); setPill('u-status','error','error'); }
+    } catch(e) { log('Error: '+e.message,'er'); setPill('u-status','err','error'); }
     updateScanBtn();
   };
   img.src = URL.createObjectURL(file);
 }
-
 function resetUpload() {
-  userState.faceDescriptor = null;
-  uz.style.display = ''; document.getElementById('preview-wrap').classList.remove('show');
-  document.getElementById('file-input').value = '';
+  uState.desc=null; uz.style.display='';
+  document.getElementById('prev-wrap').classList.remove('show');
+  document.getElementById('file-in').value='';
   setPill('u-status','idle','waiting'); updateScanBtn();
 }
 
-// ════════════════════════════════════════════════
-//  SCAN
-// ════════════════════════════════════════════════
+// ── Scan ──
 async function startScan() {
-  if (!userState.accessToken || !userState.faceDescriptor || userState.scanning) return;
-  const folderId = document.getElementById('folder-sel').value;
-  if (!folderId) { alert('Please select a folder first.'); return; }
-  const folderName = document.getElementById('folder-sel').selectedOptions[0].text;
-
-  userState.scanning = true; userState.results = [];
-  document.getElementById('prog-section').style.display = '';
-  document.getElementById('res-section').style.display = 'none';
-  setProgress(0, 'Fetching images from "'+folderName+'"…'); showLog();
-
+  if (!uState.token||!uState.desc||uState.scanning) return;
+  const fid = document.getElementById('folder-sel').value;
+  if (!fid) { alert('Please select a folder.'); return; }
+  const fname = document.getElementById('folder-sel').selectedOptions[0].text;
+  uState.scanning=true; uState.results=[];
+  document.getElementById('prog-sec').style.display='';
+  document.getElementById('res-sec').style.display='none';
+  setProg(0,'Fetching images from "'+fname+'"…'); showLog();
   try {
-    const files = await driveListImages(folderId);
-    addLog('Found '+files.length+' image(s).','info');
-    if (!files.length) { setProgress(100,'No images in folder.'); showResults([]); userState.scanning=false; return; }
-
-    const matcher = new faceapi.FaceMatcher(
-      [new faceapi.LabeledFaceDescriptors('target',[userState.faceDescriptor])],
-      appCfg.threshold
-    );
-
-    let matched = [], done = 0;
-    for (const file of files) {
-      setProgress(Math.round(done/files.length*100), 'Scanning '+(done+1)+'/'+files.length+': '+file.name);
+    const files = await driveList(fid);
+    log('Found '+files.length+' image(s).','in');
+    if (!files.length) { setProg(100,'No images found.'); showResults([]); uState.scanning=false; return; }
+    const matcher = new faceapi.FaceMatcher([new faceapi.LabeledFaceDescriptors('target',[uState.desc])], appCfg.threshold);
+    let matched=[], done=0;
+    for (const f of files) {
+      setProg(Math.round(done/files.length*100),'Scanning '+(done+1)+'/'+files.length+': '+f.name);
       try {
-        const blobUrl = await driveFetchBlob(file.id);
-        const img = await imgLoad(blobUrl);
+        const burl = await driveBlob(f.id);
+        const img = await imgLoad(burl);
         const det = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
         if (det) {
           const m = matcher.findBestMatch(det.descriptor);
-          if (m.label === 'target') {
-            const conf = Math.round((1-m.distance)*100);
-            matched.push({ ...file, blobUrl, confidence: conf });
-            addLog('✓ '+file.name+' ('+conf+'%)','ok');
-          }
+          if (m.label==='target') { const c=Math.round((1-m.distance)*100); matched.push({...f,burl,conf:c}); log('✓ '+f.name+' ('+c+'%)','ok'); }
         }
-      } catch(e) { addLog('✗ skip: '+file.name,'err'); }
+      } catch(e) { log('✗ skip: '+f.name,'er'); }
       done++;
     }
-    matched.sort((a,b) => b.confidence-a.confidence);
-    userState.results = matched;
-    setProgress(100, 'Done — '+matched.length+' match'+(matched.length!==1?'es':'')+' found.');
-    setPill('scan-status','done','complete');
-    showResults(matched);
-  } catch(e) {
-    addLog('Scan failed: '+e.message,'err'); setPill('scan-status','error','error');
-  }
-  userState.scanning = false;
+    matched.sort((a,b)=>b.conf-a.conf);
+    uState.results=matched;
+    setProg(100,'Done — '+matched.length+' match'+(matched.length!==1?'es':'')+' found.');
+    setPill('scan-st','done','complete'); showResults(matched);
+  } catch(e) { log('Scan failed: '+e.message,'er'); setPill('scan-st','err','error'); }
+  uState.scanning=false;
 }
 
-async function driveListImages(folderId) {
-  let files = [], pt;
+async function driveList(fid) {
+  let files=[],pt;
   do {
-    const p = new URLSearchParams({ q:`'${folderId}' in parents and mimeType contains 'image/' and trashed=false`, fields:'nextPageToken,files(id,name,mimeType)', pageSize:'100' });
-    if (pt) p.set('pageToken', pt);
-    const r = await fetch('https://www.googleapis.com/drive/v3/files?'+p, { headers:{ Authorization:'Bearer '+userState.accessToken } });
-    const d = await r.json(); if (d.error) throw new Error(d.error.message);
-    files = files.concat(d.files||[]); pt = d.nextPageToken;
-  } while(pt);
-  return files;
+    const p=new URLSearchParams({q:`'${fid}' in parents and mimeType contains 'image/' and trashed=false`,fields:'nextPageToken,files(id,name,mimeType)',pageSize:'100'});
+    if(pt) p.set('pageToken',pt);
+    const r=await fetch('https://www.googleapis.com/drive/v3/files?'+p,{headers:{Authorization:'Bearer '+uState.token}});
+    const d=await r.json(); if(d.error) throw new Error(d.error.message);
+    files=files.concat(d.files||[]); pt=d.nextPageToken;
+  } while(pt); return files;
 }
-
-async function driveFetchBlob(id) {
-  const r = await fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media', { headers:{ Authorization:'Bearer '+userState.accessToken } });
-  if (!r.ok) throw new Error('HTTP '+r.status);
+async function driveBlob(id) {
+  const r=await fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media',{headers:{Authorization:'Bearer '+uState.token}});
+  if(!r.ok) throw new Error('HTTP '+r.status);
   return URL.createObjectURL(await r.blob());
 }
-
 function imgLoad(src) {
-  return new Promise((res,rej) => { const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>res(i); i.onerror=()=>rej(new Error('load fail')); i.src=src; });
+  return new Promise((res,rej)=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>res(i);i.onerror=()=>rej(new Error('load'));i.src=src;});
 }
 
-// ════════════════════════════════════════════════
-//  RESULTS
-// ════════════════════════════════════════════════
+// ── Results ──
 function showResults(matches) {
-  const sec = document.getElementById('res-section');
-  sec.style.display = '';
-  document.getElementById('res-count').innerHTML = matches.length+' <em>match'+(matches.length!==1?'es':'')+'</em>';
-  const grid = document.getElementById('res-grid');
-  grid.innerHTML = '';
-  document.getElementById('empty-state').style.display = matches.length ? 'none' : '';
-  document.getElementById('dl-all-btn').style.display = matches.length ? '' : 'none';
-  matches.forEach((m,i) => {
-    const d = document.createElement('div'); d.className = 'rc';
-    d.innerHTML = `<div class="rc-img"><img src="${m.blobUrl}" alt="${m.name}" loading="lazy"><span class="rc-conf">${m.confidence}%</span></div><div class="rc-foot"><span class="rc-name" title="${m.name}">${m.name}</span><div class="rc-actions"><button class="ib" onclick="openLb(${i})" title="View"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ib" onclick="dlFile(${i})" title="Download"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button></div></div>`;
-    grid.appendChild(d);
+  document.getElementById('res-sec').style.display='';
+  document.getElementById('rcnt').innerHTML=matches.length+' <em>match'+(matches.length!==1?'es':'')+'</em>';
+  const g=document.getElementById('rgrid'); g.innerHTML='';
+  document.getElementById('empty-st').style.display=matches.length?'none':'';
+  document.getElementById('dl-all').style.display=matches.length?'':'none';
+  matches.forEach((m,i)=>{
+    const d=document.createElement('div'); d.className='rc';
+    d.innerHTML=`<div class="rcimg"><img src="${m.burl}" alt="${esc(m.name)}" loading="lazy"><span class="rcconf">${m.conf}%</span></div><div class="rcfoot"><span class="rcname" title="${esc(m.name)}">${esc(m.name)}</span><div class="rcact"><button class="ib" onclick="openLb(${i})"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ib" onclick="dlFile(${i})"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button></div></div>`;
+    g.appendChild(d);
   });
 }
 function openLb(i) {
-  const m = userState.results[i];
-  document.getElementById('lb-img').src = m.blobUrl;
-  document.getElementById('lb-name').textContent = m.name;
-  document.getElementById('lb-dl').onclick = () => dlFile(i);
-  document.getElementById('lb').classList.add('show');
+  const m=uState.results[i];
+  document.getElementById('lb-img').src=m.burl;
+  document.getElementById('lb-name').textContent=m.name;
+  document.getElementById('lb-dl').onclick=()=>dlFile(i);
+  document.getElementById('lb').classList.add('on');
 }
-function closeLb(e,f) { if(f||(e&&e.target===document.getElementById('lb'))) document.getElementById('lb').classList.remove('show'); }
-document.addEventListener('keydown', e => { if(e.key==='Escape') closeLb(null,true); });
-function dlFile(i) { const m=userState.results[i],a=document.createElement('a'); a.href=m.blobUrl; a.download=m.name; a.click(); }
-function downloadAll() { userState.results.forEach((_,i) => setTimeout(()=>dlFile(i),i*320)); }
+function closeLb(e,f){if(f||(e&&e.target===document.getElementById('lb')))document.getElementById('lb').classList.remove('on');}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLb(null,true);});
+function dlFile(i){const m=uState.results[i],a=document.createElement('a');a.href=m.burl;a.download=m.name;a.click();}
+function dlAll(){uState.results.forEach((_,i)=>setTimeout(()=>dlFile(i),i*320));}
 
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 //  ADMIN BOOT
-// ════════════════════════════════════════════════
-async function bootAdmin() {
+// ═══════════════════════════════════════════
+function bootAdmin() {
   initAdminAuth();
-  await loadFoldersAdmin();
-  // real-time sync
-  sb.channel('admin-folders')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'folders' }, payload => {
-      handleFolderChange(payload);
-    })
-    .subscribe();
-}
-
-function handleFolderChange(payload) {
-  const { eventType, new: nw, old: od } = payload;
-  if (eventType === 'INSERT') {
-    adminState.folders.push(nw);
-    logActivity('add', 'Folder added: "'+nw.name+'"');
-  } else if (eventType === 'DELETE') {
-    adminState.folders = adminState.folders.filter(f => f.id !== od.id);
-    logActivity('remove', 'Folder removed');
-  } else if (eventType === 'UPDATE') {
-    const idx = adminState.folders.findIndex(f => f.id === nw.id);
-    if (idx > -1) adminState.folders[idx] = nw;
-    logActivity('toggle', '"'+nw.name+'" set '+(nw.active?'active':'inactive'));
-  }
-  renderFolders();
+  loadFoldersAdmin();
+  sb.channel('admin-rt')
+    .on('postgres_changes',{event:'*',schema:'public',table:'folders'},payload=>{
+      const {eventType:ev,new:nw,old:od}=payload;
+      if(ev==='INSERT'){aState.folders.push(nw);logAct('add','Added: "'+nw.name+'"');}
+      else if(ev==='DELETE'){aState.folders=aState.folders.filter(f=>f.id!==od.id);logAct('remove','Removed folder');}
+      else if(ev==='UPDATE'){const i=aState.folders.findIndex(f=>f.id===nw.id);if(i>-1)aState.folders[i]=nw;logAct('toggle','"'+nw.name+'" → '+(nw.active?'active':'inactive'));}
+      renderFolders();
+    }).subscribe();
 }
 
 async function loadFoldersAdmin() {
   try {
-    const { data, error } = await sb.from('folders').select('*').order('created_at');
-    if (error) throw error;
-    adminState.folders = data || [];
-    renderFolders();
-  } catch(e) { toast('Failed to load folders: '+e.message,'err'); }
+    const {data,error}=await sb.from('folders').select('*').order('created_at');
+    if(error) throw error;
+    aState.folders=data||[]; renderFolders();
+  } catch(e) { toast('Load error: '+e.message,'er'); }
 }
 
-// ════════════════════════════════════════════════
-//  ADMIN GOOGLE AUTH (optional, for Pick)
-// ════════════════════════════════════════════════
 function initAdminAuth() {
-  if (!appCfg.clientId) return;
+  if(!appCfg.clientId) return;
   try {
-    adminState.tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: appCfg.clientId, scope: DRIVE_SCOPE,
-      callback: r => {
-        if (r.error) return;
-        adminState.accessToken = r.access_token;
-        document.getElementById('a-auth-btn').classList.add('btn-connected');
-        document.getElementById('a-auth-label').textContent = 'Drive connected';
+    aState.tc=google.accounts.oauth2.initTokenClient({
+      client_id:appCfg.clientId,scope:SCOPE,
+      callback:r=>{
+        if(r.error) return;
+        aState.token=r.access_token;
+        document.getElementById('a-auth-btn').classList.add('btn-ok');
+        document.getElementById('a-auth-lbl').textContent='Drive connected';
         toast('Drive connected','ok');
       }
     });
-  } catch(e) {}
+  } catch(e){}
 }
-function handleAdminAuth() {
-  if (adminState.accessToken) { adminState.accessToken=null; document.getElementById('a-auth-btn').classList.remove('btn-connected'); document.getElementById('a-auth-label').textContent='Connect Drive (optional)'; return; }
-  if (!appCfg.clientId) { toast('Save Google credentials first','err'); return; }
-  if (!adminState.tokenClient) initAdminAuth();
-  adminState.tokenClient.requestAccessToken({ prompt:'consent' });
+function handleAdminAuth(){
+  if(aState.token){aState.token=null;document.getElementById('a-auth-btn').classList.remove('btn-ok');document.getElementById('a-auth-lbl').textContent='Connect Drive (for Picker)';return;}
+  if(!appCfg.clientId){toast('Save Google credentials first','er');return;}
+  if(!aState.tc)initAdminAuth();
+  aState.tc.requestAccessToken({prompt:'consent'});
 }
 
-// ════════════════════════════════════════════════
-//  ADMIN FOLDERS CRUD
-// ════════════════════════════════════════════════
 async function addFolder() {
-  const name = document.getElementById('new-name').value.trim();
-  const fid  = document.getElementById('new-fid').value.trim();
-  if (!name) { toast('Enter a display name','err'); return; }
-  if (!fid)  { toast('Enter a Drive Folder ID','err'); return; }
-  if (adminState.folders.find(f => f.folder_id === fid)) { toast('Folder already added','err'); return; }
+  const name=document.getElementById('new-name').value.trim();
+  const fid=document.getElementById('new-fid').value.trim();
+  if(!name){toast('Enter a display name','er');return;}
+  if(!fid){toast('Enter a Folder ID','er');return;}
+  if(aState.folders.find(f=>f.folder_id===fid)){toast('Already added','er');return;}
   try {
-    const { error } = await sb.from('folders').insert({ name, folder_id: fid, active: true });
-    if (error) throw error;
-    document.getElementById('new-name').value = '';
-    document.getElementById('new-fid').value  = '';
-    document.getElementById('add-panel').classList.remove('show');
+    const{error}=await sb.from('folders').insert({name,folder_id:fid,active:true});
+    if(error) throw error;
+    document.getElementById('new-name').value='';
+    document.getElementById('new-fid').value='';
+    document.getElementById('addpanel').classList.remove('on');
     toast('"'+name+'" added','ok');
-  } catch(e) { toast('Error: '+e.message,'err'); }
+  } catch(e){toast('Error: '+e.message,'er');}
 }
 
-async function removeFolder(id, name) {
-  if (!confirm('Remove "'+name+'"?')) return;
-  try {
-    const { error } = await sb.from('folders').delete().eq('id', id);
-    if (error) throw error;
-    toast('"'+name+'" removed','ok');
-  } catch(e) { toast('Error: '+e.message,'err'); }
+async function removeFolder(id,name) {
+  if(!confirm('Remove "'+name+'"?')) return;
+  try{const{error}=await sb.from('folders').delete().eq('id',id);if(error)throw error;toast('Removed','ok');}
+  catch(e){toast('Error: '+e.message,'er');}
 }
 
-async function toggleFolder(id, active) {
-  try {
-    const { error } = await sb.from('folders').update({ active: !active }).eq('id', id);
-    if (error) throw error;
-  } catch(e) { toast('Error: '+e.message,'err'); }
+async function toggleFolder(id,cur) {
+  try{const{error}=await sb.from('folders').update({active:!cur}).eq('id',id);if(error)throw error;}
+  catch(e){toast('Error: '+e.message,'er');}
 }
 
-function renderFolders() {
-  const tbody = document.getElementById('folders-tbody');
-  const tbl   = document.getElementById('folders-tbl');
-  const empty = document.getElementById('folders-empty');
-  const f     = adminState.folders;
-  // stats
-  document.getElementById('s-total').textContent    = f.length;
-  document.getElementById('s-active').textContent   = f.filter(x=>x.active).length;
-  document.getElementById('s-inactive').textContent = f.filter(x=>!x.active).length;
-  if (f.length) {
-    const latest = new Date(Math.max(...f.map(x=>new Date(x.created_at)))).toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
-    document.getElementById('s-last').textContent = latest;
-  }
-  if (!f.length) { tbl.style.display='none'; empty.style.display=''; return; }
-  tbl.style.display=''; empty.style.display='none';
-  tbody.innerHTML = '';
-  f.forEach(row => {
-    const date = new Date(row.created_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
-    const shortId = row.folder_id.length > 20 ? row.folder_id.slice(0,18)+'…' : row.folder_id;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><div class="folder-cell">
-        <div class="folder-ico ${row.active?'':'off'}">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-        </div>
-        <div><div class="fn">${esc(row.name)}</div></div>
-      </div></td>
-      <td><span style="font-size:10px;color:var(--text3);" title="${esc(row.folder_id)}">${shortId}</span></td>
-      <td style="font-size:10px;color:var(--text3);">${date}</td>
-      <td><span class="pill ${row.active?'pill-on':'pill-off'}"><span class="dot"></span>${row.active?'active':'inactive'}</span></td>
-      <td><label class="toggle"><input type="checkbox" ${row.active?'checked':''} onchange="toggleFolder('${row.id}',${row.active})"><span class="toggle-track"></span></label></td>
-      <td><div class="act-cell">
-        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${esc(row.folder_id)}').then(()=>toast('ID copied','ok'))">Copy ID</button>
-        <button class="btn btn-danger btn-sm" onclick="removeFolder('${row.id}','${esc(row.name)}')">Remove</button>
-      </div></td>`;
-    tbody.appendChild(tr);
+function renderFolders(){
+  const tb=document.getElementById('f-tbody'),tbl=document.getElementById('f-tbl'),emp=document.getElementById('f-empty'),f=aState.folders;
+  document.getElementById('s-total').textContent=f.length;
+  document.getElementById('s-active').textContent=f.filter(x=>x.active).length;
+  document.getElementById('s-inactive').textContent=f.filter(x=>!x.active).length;
+  if(f.length){const d=new Date(Math.max(...f.map(x=>new Date(x.created_at)))).toLocaleDateString('en-GB',{day:'2-digit',month:'short'});document.getElementById('s-last').textContent=d;}
+  if(!f.length){tbl.style.display='none';emp.style.display='';return;}
+  tbl.style.display='';emp.style.display='none';tb.innerHTML='';
+  f.forEach(row=>{
+    const dt=new Date(row.created_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+    const sid=row.folder_id.length>19?row.folder_id.slice(0,17)+'…':row.folder_id;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td><div class="fcell"><div class="fico ${row.active?'':'off'}"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></div><div class="fn">${esc(row.name)}</div></div></td><td><span style="font-size:10px;color:var(--text3);" title="${esc(row.folder_id)}">${sid}</span></td><td style="font-size:10px;color:var(--text3);">${dt}</td><td><span class="pill ${row.active?'p-on':'p-off'}"><span class="dot"></span>${row.active?'active':'inactive'}</span></td><td><label class="toggle"><input type="checkbox" ${row.active?'checked':''} onchange="toggleFolder('${row.id}',${row.active})"><span class="ttrack"></span></label></td><td><div class="acell"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${esc(row.folder_id)}').then(()=>toast('Copied','ok'))">Copy ID</button><button class="btn btn-danger btn-sm" onclick="removeFolder('${row.id}','${esc(row.name)}')">Remove</button></div></td>`;
+    tb.appendChild(tr);
   });
 }
 
-// ════════════════════════════════════════════════
-//  DRIVE PICKER (admin)
-// ════════════════════════════════════════════════
-function pickFolder() {
-  if (!adminState.accessToken) { toast('Connect Drive first to use the picker','err'); return; }
-  gapi.load('picker', () => {
-    const picker = new google.picker.PickerBuilder()
+function pickFolder(){
+  if(!aState.token){toast('Connect Drive first','er');return;}
+  gapi.load('picker',()=>{
+    const p=new google.picker.PickerBuilder()
       .addView(new google.picker.DocsView(google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true))
-      .setOAuthToken(adminState.accessToken)
-      .setDeveloperKey(appCfg.apiKey)
-      .setCallback(d => {
-        if (d.action === google.picker.Action.PICKED) {
-          document.getElementById('new-fid').value  = d.docs[0].id;
-          document.getElementById('new-name').value = d.docs[0].name;
-          document.getElementById('add-panel').classList.add('show');
-          toast('Folder picked: '+d.docs[0].name,'ok');
-        }
-      }).build();
-    picker.setVisible(true);
+      .setOAuthToken(aState.token).setDeveloperKey(appCfg.apiKey)
+      .setCallback(d=>{if(d.action===google.picker.Action.PICKED){document.getElementById('new-fid').value=d.docs[0].id;document.getElementById('new-name').value=d.docs[0].name;document.getElementById('addpanel').classList.add('on');toast('Picked: '+d.docs[0].name,'ok');}}).build();
+    p.setVisible(true);
   });
 }
 
-// ════════════════════════════════════════════════
-//  ADMIN CONFIG
-// ════════════════════════════════════════════════
-async function saveGoogleCfg() {
-  const cid  = document.getElementById('cfg-cid').value.trim();
-  const akey = document.getElementById('cfg-akey').value.trim();
-  if (!cid||!akey) { toast('Fill both fields','err'); return; }
-  try {
-    await sb.from('app_config').upsert([
-      { key:'google_client_id', value:cid },
-      { key:'google_api_key',   value:akey },
-    ], { onConflict:'key' });
-    appCfg.clientId = cid; appCfg.apiKey = akey;
-    toast('Credentials saved','ok');
-    logActivity('config','Google credentials updated');
-    initAdminAuth();
-  } catch(e) { toast('Error: '+e.message,'err'); }
+async function saveCreds(){
+  const cid=document.getElementById('cfg-cid').value.trim();
+  const ak=document.getElementById('cfg-akey').value.trim();
+  if(!cid||!ak){toast('Fill both fields','er');return;}
+  try{
+    await sb.from('app_config').upsert([{key:'google_client_id',value:cid},{key:'google_api_key',value:ak}],{onConflict:'key'});
+    appCfg.clientId=cid;appCfg.apiKey=ak;
+    toast('Credentials saved','ok');logAct('config','Credentials updated');initAdminAuth();
+  }catch(e){toast('Error: '+e.message,'er');}
 }
 
-async function saveThreshold() {
-  const val = (document.getElementById('thresh-slider').value / 100).toFixed(2);
-  try {
-    await sb.from('app_config').upsert([{ key:'match_threshold', value:val }],{ onConflict:'key' });
-    appCfg.threshold = parseFloat(val);
-    toast('Threshold saved: '+val,'ok');
-    logActivity('config','Match threshold → '+val);
-  } catch(e) { toast('Error: '+e.message,'err'); }
+async function saveThreshold(){
+  const val=(document.getElementById('thresh').value/100).toFixed(2);
+  try{
+    await sb.from('app_config').upsert([{key:'match_threshold',value:val}],{onConflict:'key'});
+    appCfg.threshold=parseFloat(val);toast('Threshold saved: '+val,'ok');logAct('config','Threshold → '+val);
+  }catch(e){toast('Error: '+e.message,'er');}
 }
 
-async function confirmClearAll() {
-  if (!adminState.folders.length) { toast('No folders to clear','err'); return; }
-  if (!confirm('Delete ALL '+adminState.folders.length+' folders? This cannot be undone.')) return;
-  try {
-    const ids = adminState.folders.map(f=>f.id);
-    const { error } = await sb.from('folders').delete().in('id', ids);
-    if (error) throw error;
-    toast('All folders removed','ok');
-    logActivity('remove','All folders cleared');
-  } catch(e) { toast('Error: '+e.message,'err'); }
+async function clearAll(){
+  if(!aState.folders.length){toast('Nothing to clear','er');return;}
+  if(!confirm('Delete ALL '+aState.folders.length+' folders?')) return;
+  try{
+    const ids=aState.folders.map(f=>f.id);
+    const{error}=await sb.from('folders').delete().in('id',ids);
+    if(error)throw error;toast('All cleared','ok');logAct('remove','All folders cleared');
+  }catch(e){toast('Error: '+e.message,'er');}
 }
 
-function exportFolders() {
-  const blob = new Blob([JSON.stringify(adminState.folders, null, 2)],{ type:'application/json' });
-  const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='facescan-folders.json'; a.click();
-  toast('Exported '+adminState.folders.length+' folders','ok');
+function exportFolders(){
+  const b=new Blob([JSON.stringify(aState.folders,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='facescan-folders.json';a.click();
+  toast('Exported','ok');
 }
 
-// ════════════════════════════════════════════════
-//  ACTIVITY
-// ════════════════════════════════════════════════
-function logActivity(type, msg) {
-  adminState.activity.unshift({ type, msg, time: new Date() });
-  renderActivity();
+function logAct(type,msg){aState.activity.unshift({type,msg,time:new Date()});renderAct();}
+function renderAct(){
+  const el=document.getElementById('act-list');
+  if(!aState.activity.length){el.innerHTML='<div style="text-align:center;padding:38px 0;color:var(--text3);font-size:12px;">No activity yet.</div>';return;}
+  el.innerHTML=aState.activity.map(a=>`<div class="actitem"><div class="adot ${a.type}"></div><div><div style="color:var(--text);font-size:12px;">${esc(a.msg)}</div><div class="atime">${a.time.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} · ${a.time.toLocaleTimeString('en',{hour12:false})}</div></div></div>`).join('');
 }
-function renderActivity() {
-  const el = document.getElementById('activity-list');
-  if (!adminState.activity.length) { el.innerHTML='<div style="text-align:center;padding:40px 0;color:var(--text3);font-size:12px;">No activity yet.</div>'; return; }
-  el.innerHTML = adminState.activity.map(a => `
-    <div class="act-item">
-      <div class="act-dot ${a.type}"></div>
-      <div><div style="color:var(--text);font-size:12px;">${esc(a.msg)}</div><div class="act-time">${a.time.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} · ${a.time.toLocaleTimeString('en',{hour12:false})}</div></div>
-    </div>`).join('');
-}
-function clearActivity() { adminState.activity=[]; renderActivity(); }
+function clearAct(){aState.activity=[];renderAct();}
 
-// ════════════════════════════════════════════════
-//  ADMIN NAV
-// ════════════════════════════════════════════════
-function showAdminTab(name, el) {
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active');
-  el.classList.add('active');
+function showTab(name,el){
+  document.querySelectorAll('.tab-s').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('.nv').forEach(n=>n.classList.remove('on'));
+  document.getElementById('tab-'+name).classList.add('on');
+  el.classList.add('on');
 }
-function toggleAddPanel() { document.getElementById('add-panel').classList.toggle('show'); }
-function goUser() { window.location.href = window.location.pathname; }
+function goUser(){history.pushState({},'',location.pathname);location.reload();}
 
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 //  SHARED UTILS
-// ════════════════════════════════════════════════
-function updateScanBtn() {
-  const ok = !!(userState.faceDescriptor && userState.accessToken && document.getElementById('folder-sel').value);
-  document.getElementById('scan-btn').disabled = !ok;
+// ═══════════════════════════════════════════
+function updateScanBtn(){
+  document.getElementById('scan-btn').disabled=!(uState.desc&&uState.token&&document.getElementById('folder-sel').value);
 }
-function setPill(id, type, label) {
-  const e = document.getElementById(id); e.className='pill pill-'+type;
-  e.innerHTML = '<span class="dot"></span>'+label;
+function setPill(id,type,label){const e=document.getElementById(id);e.className='pill p-'+type;e.innerHTML='<span class="dot"></span>'+label;}
+function setProg(pct,msg){document.getElementById('prog-fill').style.width=pct+'%';document.getElementById('prog-txt').textContent=msg;}
+function showLog(){document.getElementById('logbox').classList.add('on');}
+function log(msg,type){
+  const b=document.getElementById('logbox');b.classList.add('on');
+  const l=document.createElement('div');l.className='ll '+(type||'');
+  const ts=new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  l.textContent='['+ts+'] '+msg;b.appendChild(l);b.scrollTop=b.scrollHeight;
 }
-function setProgress(pct, msg) {
-  document.getElementById('prog-fill').style.width = pct+'%';
-  document.getElementById('prog-text').textContent = msg;
-}
-function showLog() { document.getElementById('log-box').classList.add('show'); }
-function addLog(msg, type) {
-  const box = document.getElementById('log-box'); box.classList.add('show');
-  const l = document.createElement('div'); l.className='ll '+(type||'');
-  const ts = new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  l.textContent = '['+ts+'] '+msg; box.appendChild(l); box.scrollTop=box.scrollHeight;
-}
-let _toastT;
-function toast(msg, type) {
-  const el=document.getElementById('toast');
+let _tt;
+function toast(msg,type){
+  const e=document.getElementById('toast');
   document.getElementById('toast-msg').textContent=msg;
-  el.className='show '+(type||'');
-  clearTimeout(_toastT); _toastT=setTimeout(()=>el.className='',2800);
+  e.className='on '+(type||'');
+  clearTimeout(_tt);_tt=setTimeout(()=>e.className='',2800);
 }
-function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 </script>
 </body>
 </html>
