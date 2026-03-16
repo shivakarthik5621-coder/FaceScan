@@ -4,13 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaceScan</title>
-
-<!-- ALL scripts in head, loaded before body renders -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<script src="https://apis.google.com/js/api.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
-
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;1,9..144,300&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -26,41 +19,23 @@
   --mono:'DM Mono',monospace;--serif:'Fraunces',serif;
 }
 html,body{background:var(--bg);color:var(--tx);font-family:var(--mono);min-height:100vh;}
-
-/* grid bg */
 body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   background:radial-gradient(ellipse 90% 50% at 50% -5%,rgba(108,92,231,0.12),transparent),
   linear-gradient(rgba(108,92,231,0.02) 1px,transparent 1px),
   linear-gradient(90deg,rgba(108,92,231,0.02) 1px,transparent 1px);
   background-size:100%,48px 48px,48px 48px;}
 
-/* ── error bar ── */
-#err-bar{display:none;position:fixed;top:0;left:0;right:0;z-index:9999;
-  background:#7f1d1d;color:#fca5a5;font-family:monospace;font-size:12px;
-  padding:10px 16px;line-height:1.5;white-space:pre-wrap;word-break:break-all;}
-
-/* ── spinner / init ── */
-#init-screen{position:fixed;inset:0;background:var(--bg);z-index:500;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;}
+/* ── init screen ── */
+#init-screen{position:fixed;inset:0;background:var(--bg);z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;}
 .sp-logo{font-family:var(--serif);font-size:28px;font-weight:300;color:var(--tx);}
 .sp-logo em{color:var(--a2);font-style:italic;}
 .spinner{width:28px;height:28px;border:2px solid var(--surface2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
-.sp-msg{font-size:11px;color:var(--tx3);letter-spacing:.5px;}
-
-/* ── layout ── */
-.page{position:relative;z-index:1;max-width:940px;margin:0 auto;padding:0 22px 100px;}
-.header{display:flex;align-items:center;justify-content:space-between;padding:24px 0 40px;border-bottom:1px solid var(--b1);margin-bottom:48px;}
-.logo{display:flex;align-items:center;gap:10px;cursor:pointer;}
-.lmark{width:36px;height:36px;border:1px solid var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;background:rgba(108,92,231,0.08);}
-.lmark svg{width:17px;height:17px;}
-.lword{font-family:var(--serif);font-size:18px;font-weight:300;color:var(--tx);}
-.lword em{color:var(--a2);font-style:italic;}
+#sp-msg{font-size:11px;color:var(--tx3);letter-spacing:.5px;}
+#init-err{display:none;font-size:11px;color:var(--r2);max-width:340px;text-align:center;line-height:1.6;background:rgba(225,112,85,.08);border:1px solid rgba(225,112,85,.25);border-radius:8px;padding:10px 14px;}
 
 /* ── buttons ── */
-.btn{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;
-  letter-spacing:.4px;padding:8px 16px;border-radius:8px;border:1px solid;cursor:pointer;
-  transition:all .15s;white-space:nowrap;background:transparent;text-decoration:none;}
+.btn{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;letter-spacing:.4px;padding:8px 16px;border-radius:8px;border:1px solid;cursor:pointer;transition:all .15s;white-space:nowrap;background:transparent;text-decoration:none;}
 .btn svg{width:12px;height:12px;stroke:currentColor;flex-shrink:0;}
 .bp{background:var(--accent)!important;border-color:var(--accent)!important;color:#fff!important;}
 .bp:hover{background:var(--a2)!important;border-color:var(--a2)!important;}
@@ -104,7 +79,15 @@ select.finp option{background:var(--bg2);}
 .tgl input:checked+.ttr{background:rgba(0,184,148,.15);border-color:rgba(0,184,148,.4);}
 .tgl input:checked+.ttr::before{transform:translateX(16px);background:var(--green);}
 
-/* ── hero ── */
+/* ══════════ USER ══════════ */
+#app-user{display:none;position:relative;z-index:1;}
+.page{max-width:940px;margin:0 auto;padding:0 22px 100px;}
+.header{display:flex;align-items:center;justify-content:space-between;padding:24px 0 40px;border-bottom:1px solid var(--b1);margin-bottom:48px;}
+.logo{display:flex;align-items:center;gap:10px;cursor:pointer;}
+.lmark{width:36px;height:36px;border:1px solid var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;background:rgba(108,92,231,0.08);}
+.lmark svg{width:17px;height:17px;}
+.lword{font-family:var(--serif);font-size:18px;font-weight:300;color:var(--tx);}
+.lword em{color:var(--a2);font-style:italic;}
 .hero{text-align:center;padding:12px 0 52px;}
 .heye{font-size:10px;letter-spacing:2px;color:var(--a2);text-transform:uppercase;margin-bottom:14px;}
 .hero h1{font-family:var(--serif);font-size:clamp(36px,7vw,64px);font-weight:300;line-height:1.06;letter-spacing:-1.5px;margin-bottom:14px;}
@@ -114,8 +97,6 @@ select.finp option{background:var(--bg2);}
 .step{background:var(--surface);border:1px solid var(--b1);border-radius:12px;padding:14px 15px;}
 .sn{font-size:10px;color:var(--accent);letter-spacing:2px;margin-bottom:4px;text-transform:uppercase;}
 .st{font-size:12px;color:var(--tx2);line-height:1.5;}
-
-/* ── upload ── */
 .upz{border:1px dashed var(--b2);border-radius:12px;padding:48px 22px;text-align:center;cursor:pointer;transition:all .2s;position:relative;overflow:hidden;}
 .upz:hover,.upz.drag{border-color:var(--accent);background:rgba(108,92,231,.04);}
 .upz input{position:absolute;inset:0;opacity:0;cursor:pointer;}
@@ -123,8 +104,6 @@ select.finp option{background:var(--bg2);}
 .uico svg{width:20px;height:20px;stroke:var(--a2);}
 .uttl{font-size:13px;color:var(--tx);margin-bottom:4px;}
 .usub{font-size:11px;color:var(--tx3);}
-
-/* ── preview ── */
 #pwrap{display:none;gap:20px;align-items:flex-start;}
 #pwrap.show{display:flex;}
 .pframe{position:relative;flex-shrink:0;}
@@ -132,18 +111,13 @@ select.finp option{background:var(--bg2);}
 #fov{position:absolute;top:0;left:0;width:174px;height:174px;pointer-events:none;}
 .irow{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--tx2);margin-bottom:7px;}
 .irow .lbl{color:var(--tx3);min-width:68px;}
-.irow .val{color:var(--tx);}
 .fbadge{display:inline-flex;align-items:center;gap:5px;background:rgba(0,184,148,.08);border:1px solid rgba(0,184,148,.3);color:var(--g2);font-size:11px;padding:3px 9px;border-radius:20px;margin-top:7px;}
-
-/* ── progress ── */
 .pgw{background:var(--bg3);border-radius:3px;height:2px;overflow:hidden;margin:9px 0 6px;}
 .pgf{height:100%;background:linear-gradient(90deg,var(--accent),var(--a2));border-radius:3px;transition:width .3s;width:0%;}
-.pgt{font-size:11px;color:var(--tx3);}
+.pgtt{font-size:11px;color:var(--tx3);}
 .logb{background:var(--bg2);border:1px solid var(--b1);border-radius:9px;padding:10px 12px;font-size:10px;color:var(--tx3);max-height:100px;overflow-y:auto;line-height:1.8;display:none;margin-top:10px;}
 .logb.on{display:block;}
 .ll{margin-bottom:1px;}.ll.ok{color:var(--g2);}.ll.er{color:var(--r2);}.ll.in{color:var(--a2);}
-
-/* ── results ── */
 .rh{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
 .rcnt{font-family:var(--serif);font-size:22px;font-weight:300;}
 .rcnt em{color:var(--a2);font-style:italic;}
@@ -161,8 +135,9 @@ select.finp option{background:var(--bg2);}
 .ib svg{width:11px;height:11px;stroke:var(--tx2);}
 .ib:hover svg{stroke:var(--a2);}
 .empst{text-align:center;padding:46px 0;color:var(--tx3);}
+.notice{background:rgba(253,203,110,.06);border:1px solid rgba(253,203,110,.2);border-radius:9px;padding:11px 14px;font-size:11px;color:var(--amber);line-height:1.7;}
 
-/* ── lightbox ── */
+/* lightbox */
 #lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:200;align-items:center;justify-content:center;padding:18px;}
 #lb.on{display:flex;}
 .lbi{position:relative;max-width:800px;width:100%;background:var(--surface);border:1px solid var(--b2);border-radius:18px;overflow:hidden;}
@@ -172,13 +147,10 @@ select.finp option{background:var(--bg2);}
 .lbx{position:absolute;top:9px;right:9px;width:28px;height:28px;background:rgba(0,0,0,.6);border:1px solid var(--b2);border-radius:6px;color:var(--tx2);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .13s;}
 .lbx:hover{border-color:var(--red);color:var(--red);}
 
-/* ── notice ── */
-.notice{background:rgba(253,203,110,.06);border:1px solid rgba(253,203,110,.2);border-radius:9px;padding:11px 14px;font-size:11px;color:var(--amber);line-height:1.7;}
-
 /* ══════════ ADMIN ══════════ */
-#app-admin{display:none;}
-.alayout{display:flex;min-height:100vh;}
-.sidebar{width:200px;flex-shrink:0;border-right:1px solid var(--b1);background:var(--bg2);display:flex;flex-direction:column;padding:22px 0 16px;position:sticky;top:0;height:100vh;}
+#app-admin{display:none;position:relative;z-index:1;}
+.alayout{display:flex;min-height:100vh;width:100%;}
+.sidebar{width:200px;min-width:200px;flex-shrink:0;border-right:1px solid var(--b1);background:var(--bg2);display:flex;flex-direction:column;padding:22px 0 16px;position:sticky;top:0;height:100vh;overflow-y:auto;}
 .slogo{padding:0 15px 20px;border-bottom:1px solid var(--b1);margin-bottom:12px;}
 .sbadge{display:inline-block;font-size:9px;letter-spacing:1.5px;padding:2px 7px;background:rgba(108,92,231,.12);border:1px solid rgba(108,92,231,.25);color:var(--accent);border-radius:20px;text-transform:uppercase;margin-top:4px;}
 .nv{display:flex;align-items:center;gap:8px;padding:9px 15px;font-size:12px;color:var(--tx3);cursor:pointer;transition:all .13s;border-left:2px solid transparent;}
@@ -186,13 +158,13 @@ select.finp option{background:var(--bg2);}
 .nv.on{color:var(--a2);border-left-color:var(--accent);background:rgba(108,92,231,.06);}
 .nv svg{width:13px;height:13px;stroke:currentColor;flex-shrink:0;}
 .sfoot{margin-top:auto;padding:12px 15px 0;border-top:1px solid var(--b1);}
-.sfoot a{font-size:11px;color:var(--tx3);text-decoration:none;display:flex;align-items:center;gap:6px;padding:6px 0;transition:color .13s;}
+.sfoot a{font-size:11px;color:var(--tx3);text-decoration:none;display:flex;align-items:center;gap:6px;padding:6px 0;transition:color .13s;cursor:pointer;}
 .sfoot a:hover{color:var(--a2);}
 .sfoot svg{width:10px;height:10px;stroke:currentColor;}
-.amain{flex:1;padding:30px 38px;overflow-y:auto;}
-.pgh{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:26px;}
-.pgt{font-family:var(--serif);font-size:26px;font-weight:300;letter-spacing:-.5px;line-height:1.2;}
-.pgt em{color:var(--a2);font-style:italic;}
+.amain{flex:1;min-width:0;padding:30px 38px;overflow-y:auto;background:var(--bg);}
+.pgh{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:26px;gap:12px;}
+.pgt2{font-family:var(--serif);font-size:26px;font-weight:300;letter-spacing:-.5px;line-height:1.2;}
+.pgt2 em{color:var(--a2);font-style:italic;}
 .pgs{font-size:11px;color:var(--tx3);margin-top:4px;}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:22px;}
 .stat{background:var(--surface);border:1px solid var(--b1);border-radius:12px;padding:12px 14px;}
@@ -207,7 +179,7 @@ select.finp option{background:var(--bg2);}
 .agrid{display:grid;grid-template-columns:1fr 1fr auto;gap:9px;align-items:end;}
 .tbl{width:100%;border-collapse:collapse;}
 .tbl th{font-size:10px;letter-spacing:1px;color:var(--tx3);text-transform:uppercase;text-align:left;padding:0 12px 9px;border-bottom:1px solid var(--b1);}
-.tbl td{padding:11px 12px;font-size:12px;border-bottom:1px solid var(--b1);vertical-align:middle;}
+.tbl td{padding:11px 12px;font-size:12px;border-bottom:1px solid var(--b1);vertical-align:middle;color:var(--tx);}
 .tbl tr:last-child td{border-bottom:none;}
 .tbl tr:hover td{background:rgba(255,255,255,.01);}
 .fcell{display:flex;align-items:center;gap:9px;}
@@ -227,7 +199,7 @@ select.finp option{background:var(--bg2);}
 .rtd{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;animation:rtp 2s infinite;margin-right:2px;}
 @keyframes rtp{0%,100%{opacity:1;}50%{opacity:.2;}}
 
-/* ── toast ── */
+/* toast */
 #toast{position:fixed;bottom:20px;right:20px;background:var(--surface);border:1px solid var(--b2);border-radius:9px;padding:9px 14px;font-size:11px;color:var(--tx);z-index:9990;transform:translateY(55px);opacity:0;transition:all .24s;display:flex;align-items:center;gap:7px;min-width:170px;pointer-events:none;}
 #toast.on{transform:translateY(0);opacity:1;}
 #toast.ok{border-left:2px solid var(--green);}
@@ -249,17 +221,16 @@ select.finp option{background:var(--bg2);}
 </head>
 <body>
 
-<div id="err-bar"></div>
-
 <!-- ══ INIT SCREEN ══ -->
 <div id="init-screen">
   <div class="sp-logo">Face<em>Scan</em></div>
-  <div class="spinner"></div>
-  <div class="sp-msg" id="sp-msg">Initializing…</div>
+  <div class="spinner" id="init-spinner"></div>
+  <div id="sp-msg">Initializing…</div>
+  <div id="init-err"></div>
 </div>
 
 <!-- ══════════ USER APP ══════════ -->
-<div id="app-user" style="display:none;">
+<div id="app-user">
 <div class="page">
   <div class="header">
     <div class="logo" onclick="location.href=location.pathname">
@@ -310,7 +281,9 @@ select.finp option{background:var(--bg2);}
           <div id="fbadge" class="fbadge" style="display:none;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Face detected</div>
           <div style="margin-top:15px;display:flex;gap:7px;flex-wrap:wrap;">
             <button class="btn bg" onclick="resetUp()">Clear</button>
-            <button class="btn bp" id="scan-btn" onclick="startScan()" disabled><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Scan folder</button>
+            <button class="btn bp" id="scan-btn" onclick="startScan()" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Scan folder
+            </button>
           </div>
         </div>
       </div>
@@ -322,7 +295,7 @@ select.finp option{background:var(--bg2);}
       <div class="ch"><span class="clbl">Scanning</span><span class="pill pr" id="sc-st"><span class="dot"></span>running</span></div>
       <div class="cb">
         <div class="pgw"><div class="pgf" id="pgf"></div></div>
-        <div class="pgt" id="pgt">Initializing…</div>
+        <div class="pgtt" id="pgtt">Initializing…</div>
         <div class="logb" id="logb"></div>
       </div>
     </div>
@@ -337,7 +310,10 @@ select.finp option{background:var(--bg2);}
           <button class="btn bg" id="dlall" onclick="dlAll()" style="display:none;">Download all</button>
         </div>
         <div class="rgrid" id="rgrid"></div>
-        <div class="empst" id="empst" style="display:none;"><div style="font-family:var(--serif);font-size:60px;font-weight:300;font-style:italic;color:var(--surface2);margin-bottom:5px;">∅</div><div style="font-size:12px;">No matching faces found</div></div>
+        <div class="empst" id="empst" style="display:none;">
+          <div style="font-family:var(--serif);font-size:60px;font-weight:300;font-style:italic;color:var(--surface2);margin-bottom:5px;">∅</div>
+          <div style="font-size:12px;">No matching faces found</div>
+        </div>
       </div>
     </div>
   </div>
@@ -346,100 +322,136 @@ select.finp option{background:var(--bg2);}
 
 <!-- ══════════ ADMIN APP ══════════ -->
 <div id="app-admin">
-<div class="alayout">
-  <div class="sidebar">
-    <div class="slogo">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <div class="lmark" style="width:27px;height:27px;"><svg viewBox="0 0 24 24" fill="none" stroke="#a29bfe" stroke-width="1.5" width="13" height="13"><circle cx="12" cy="8" r="3.5"/><path d="M3 21c0-4.5 4-8 9-8s9 3.5 9 8"/></svg></div>
-        <span class="lword" style="font-size:15px;">Face<em>Scan</em></span>
-      </div>
-      <div class="sbadge">admin panel</div>
-    </div>
-    <div class="nv on" onclick="showTab('folders',this)"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Folders</div>
-    <div class="nv" onclick="showTab('config',this)"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>Configuration</div>
-    <div class="nv" onclick="showTab('activity',this)"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Activity</div>
-    <div class="sfoot">
-      <a href="#" onclick="goUser();return false;"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>User app</a>
-      <a href="#"><span class="rtd"></span>Live sync on</a>
-    </div>
-  </div>
-  <div class="amain">
-
-    <!-- FOLDERS -->
-    <div id="tab-folders" class="tab-s on">
-      <div class="pgh">
-        <div><div class="pgt">Drive <em>folders</em></div><div class="pgs">Changes sync to all users instantly via Supabase</div></div>
-        <button class="btn bg" id="aauth-btn" onclick="handleAdminAuth()"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg><span id="aauth-lbl">Connect Drive (for Picker)</span></button>
-      </div>
-      <div class="stats">
-        <div class="stat"><div class="slbl">Total</div><div class="sval a" id="s-tot">0</div></div>
-        <div class="stat"><div class="slbl">Active</div><div class="sval g" id="s-act">0</div></div>
-        <div class="stat"><div class="slbl">Inactive</div><div class="sval r" id="s-ina">0</div></div>
-        <div class="stat"><div class="slbl">Last change</div><div class="sval" id="s-lst" style="font-size:12px;padding-top:5px;">—</div></div>
-      </div>
-      <div class="apanel" id="apanel">
-        <div class="flbl" style="margin-bottom:10px;">Add new folder</div>
-        <div class="agrid">
-          <div><label class="flbl">Display name</label><input class="finp" type="text" id="nn" placeholder="Event Photos 2024"></div>
-          <div><label class="flbl">Google Drive Folder ID</label><input class="finp" type="text" id="nf" placeholder="1BxiMVs0XRA5nFMd…"></div>
-          <div style="display:flex;gap:6px;padding-bottom:1px;">
-            <button class="btn bp" onclick="addFolder()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button>
-            <button class="btn bg" onclick="pickFolder()"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Pick</button>
-          </div>
+  <div class="alayout">
+    <div class="sidebar">
+      <div class="slogo">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <div class="lmark" style="width:27px;height:27px;"><svg viewBox="0 0 24 24" fill="none" stroke="#a29bfe" stroke-width="1.5" width="13" height="13"><circle cx="12" cy="8" r="3.5"/><path d="M3 21c0-4.5 4-8 9-8s9 3.5 9 8"/></svg></div>
+          <span class="lword" style="font-size:15px;">Face<em>Scan</em></span>
         </div>
-        <div style="font-size:10px;color:var(--tx3);margin-top:7px;line-height:1.6;">Folder ID: drive.google.com/drive/folders/<strong style="color:var(--a2);">FOLDER_ID_HERE</strong></div>
+        <div class="sbadge">admin panel</div>
       </div>
-      <div class="sec">
-        <div class="sech"><div class="sect">Configured folders</div><button class="btn bp bsm" onclick="document.getElementById('apanel').classList.toggle('on')"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add folder</button></div>
-        <div class="card">
-          <div id="femp" style="text-align:center;padding:38px;color:var(--tx3);font-size:12px;"><div style="font-family:var(--serif);font-size:44px;font-weight:300;font-style:italic;color:var(--surface2);margin-bottom:6px;">∅</div>No folders yet.</div>
-          <table class="tbl" id="ftbl" style="display:none;"><thead><tr><th>Folder</th><th>Folder ID</th><th>Added</th><th>Status</th><th>Active</th><th></th></tr></thead><tbody id="ftbody"></tbody></table>
-        </div>
+      <div class="nv on" id="nav-folders" onclick="showTab('folders',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Folders
+      </div>
+      <div class="nv" id="nav-config" onclick="showTab('config',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>Configuration
+      </div>
+      <div class="nv" id="nav-activity" onclick="showTab('activity',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Activity
+      </div>
+      <div class="sfoot">
+        <a onclick="goUser()"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>User app</a>
+        <a><span class="rtd"></span>Live sync on</a>
       </div>
     </div>
 
-    <!-- CONFIG -->
-    <div id="tab-config" class="tab-s">
-      <div class="pgh"><div><div class="pgt">App <em>configuration</em></div><div class="pgs">Google API credentials · synced via Supabase to all devices</div></div></div>
-      <div class="sec"><div class="sech"><div class="sect">Google credentials</div></div>
-        <div class="card"><div class="cb">
-          <div class="cfg2">
-            <div><label class="flbl">OAuth Client ID</label><input class="finp" type="text" id="ccid" placeholder="xxxxxxx.apps.googleusercontent.com"></div>
-            <div><label class="flbl">API Key</label><input class="finp" type="text" id="cakey" placeholder="AIza…"></div>
+    <div class="amain">
+
+      <!-- FOLDERS TAB -->
+      <div id="tab-folders" class="tab-s on">
+        <div class="pgh">
+          <div>
+            <div class="pgt2">Drive <em>folders</em></div>
+            <div class="pgs">Changes sync to all users instantly via Supabase</div>
           </div>
-          <button class="btn bp" style="margin-top:12px;" onclick="saveCreds()">Save credentials</button>
-          <div style="font-size:10px;color:var(--tx3);margin-top:10px;line-height:1.7;">Authorized JavaScript origin: <code style="color:var(--a2);background:var(--bg3);padding:1px 5px;border-radius:4px;font-size:10px;">https://shivakarthik5621-coder.github.io</code></div>
-        </div></div>
-      </div>
-      <div class="sec"><div class="sech"><div class="sect">Face match threshold</div></div>
-        <div class="card"><div class="cb">
-          <div style="max-width:360px;">
-            <div class="flbl">Sensitivity (0.3 strict → 0.7 loose)</div>
-            <div style="display:flex;align-items:center;gap:13px;margin-top:8px;">
-              <input type="range" id="thresh" min="30" max="70" value="50" style="flex:1;height:3px;background:var(--bg3);border-radius:3px;border:none;padding:0;cursor:pointer;" oninput="document.getElementById('tv').textContent=(this.value/100).toFixed(2)">
-              <span style="font-size:14px;font-weight:500;color:var(--a2);min-width:32px;" id="tv">0.50</span>
+          <button class="btn bg" id="aauth-btn" onclick="handleAdminAuth()">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+            <span id="aauth-lbl">Connect Drive</span>
+          </button>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><div class="slbl">Total</div><div class="sval a" id="s-tot">0</div></div>
+          <div class="stat"><div class="slbl">Active</div><div class="sval g" id="s-act">0</div></div>
+          <div class="stat"><div class="slbl">Inactive</div><div class="sval r" id="s-ina">0</div></div>
+          <div class="stat"><div class="slbl">Last change</div><div class="sval" id="s-lst" style="font-size:12px;padding-top:5px;">—</div></div>
+        </div>
+
+        <div class="apanel" id="apanel">
+          <div class="flbl" style="margin-bottom:10px;">Add new folder</div>
+          <div class="agrid">
+            <div><label class="flbl">Display name</label><input class="finp" type="text" id="nn" placeholder="Event Photos 2024"></div>
+            <div><label class="flbl">Google Drive Folder ID</label><input class="finp" type="text" id="nf" placeholder="1BxiMVs0XRA5nFMd…"></div>
+            <div style="display:flex;gap:6px;padding-bottom:1px;">
+              <button class="btn bp" onclick="addFolder()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button>
+              <button class="btn bg" onclick="pickFolder()"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Pick</button>
             </div>
           </div>
-          <button class="btn bp" style="margin-top:14px;" onclick="saveThresh()">Save threshold</button>
+          <div style="font-size:10px;color:var(--tx3);margin-top:7px;line-height:1.6;">Folder ID: drive.google.com/drive/folders/<strong style="color:var(--a2);">FOLDER_ID_HERE</strong></div>
+        </div>
+
+        <div class="sec">
+          <div class="sech">
+            <div class="sect">Configured folders</div>
+            <button class="btn bp bsm" onclick="document.getElementById('apanel').classList.toggle('on')">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add folder
+            </button>
+          </div>
+          <div class="card" style="overflow-x:auto;">
+            <div id="femp" style="text-align:center;padding:38px;color:var(--tx3);font-size:12px;">
+              <div style="font-family:var(--serif);font-size:44px;font-weight:300;font-style:italic;color:var(--surface2);margin-bottom:6px;">∅</div>No folders yet.
+            </div>
+            <table class="tbl" id="ftbl" style="display:none;">
+              <thead><tr><th>Folder</th><th>Folder ID</th><th>Added</th><th>Status</th><th>Active</th><th></th></tr></thead>
+              <tbody id="ftbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONFIG TAB -->
+      <div id="tab-config" class="tab-s">
+        <div class="pgh"><div><div class="pgt2">App <em>configuration</em></div><div class="pgs">Google API credentials · synced via Supabase to all devices</div></div></div>
+        <div class="sec">
+          <div class="sech"><div class="sect">Google credentials</div></div>
+          <div class="card"><div class="cb">
+            <div class="cfg2">
+              <div><label class="flbl">OAuth Client ID</label><input class="finp" type="text" id="ccid" placeholder="xxxxxxx.apps.googleusercontent.com"></div>
+              <div><label class="flbl">API Key</label><input class="finp" type="text" id="cakey" placeholder="AIza…"></div>
+            </div>
+            <button class="btn bp" style="margin-top:12px;" onclick="saveCreds()">Save credentials</button>
+            <div style="font-size:10px;color:var(--tx3);margin-top:10px;line-height:1.7;">
+              Authorized JavaScript origin: <code style="color:var(--a2);background:var(--bg3);padding:1px 5px;border-radius:4px;font-size:10px;">https://shivakarthik5621-coder.github.io</code>
+            </div>
+          </div></div>
+        </div>
+        <div class="sec">
+          <div class="sech"><div class="sect">Face match threshold</div></div>
+          <div class="card"><div class="cb">
+            <div style="max-width:360px;">
+              <div class="flbl">Sensitivity (0.3 strict → 0.7 loose)</div>
+              <div style="display:flex;align-items:center;gap:13px;margin-top:8px;">
+                <input type="range" id="thresh" min="30" max="70" value="50" style="flex:1;height:3px;accent-color:var(--accent);cursor:pointer;" oninput="document.getElementById('tv').textContent=(this.value/100).toFixed(2)">
+                <span style="font-size:14px;font-weight:500;color:var(--a2);min-width:32px;" id="tv">0.50</span>
+              </div>
+            </div>
+            <button class="btn bp" style="margin-top:14px;" onclick="saveThresh()">Save threshold</button>
+          </div></div>
+        </div>
+        <div class="sec">
+          <div class="sech"><div class="sect">Data</div></div>
+          <div class="card"><div class="cb" style="display:flex;gap:9px;flex-wrap:wrap;">
+            <button class="btn bg" onclick="exportF()"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export JSON</button>
+            <button class="btn bd" onclick="clearAll()"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>Clear all</button>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- ACTIVITY TAB -->
+      <div id="tab-activity" class="tab-s">
+        <div class="pgh">
+          <div><div class="pgt2">Activity <em>log</em></div><div class="pgs">All folder changes this session</div></div>
+          <button class="btn bg bsm" onclick="clearAct()">Clear</button>
+        </div>
+        <div class="card"><div class="cb" id="actlist">
+          <div style="text-align:center;padding:36px 0;color:var(--tx3);font-size:12px;">No activity yet.</div>
         </div></div>
       </div>
-      <div class="sec"><div class="sech"><div class="sect">Data</div></div>
-        <div class="card"><div class="cb" style="display:flex;gap:9px;flex-wrap:wrap;">
-          <button class="btn bg" onclick="exportF()"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export JSON</button>
-          <button class="btn bd" onclick="clearAll()"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>Clear all</button>
-        </div></div>
-      </div>
-    </div>
 
-    <!-- ACTIVITY -->
-    <div id="tab-activity" class="tab-s">
-      <div class="pgh"><div><div class="pgt">Activity <em>log</em></div><div class="pgs">All folder changes this session</div></div><button class="btn bg bsm" onclick="clearAct()">Clear</button></div>
-      <div class="card"><div class="cb" id="actlist"><div style="text-align:center;padding:36px 0;color:var(--tx3);font-size:12px;">No activity yet.</div></div></div>
-    </div>
-
-  </div>
-</div>
-</div>
+    </div><!-- /amain -->
+  </div><!-- /alayout -->
+</div><!-- /app-admin -->
 
 <!-- LIGHTBOX -->
 <div id="lb" onclick="closeLb(event)">
@@ -451,128 +463,141 @@ select.finp option{background:var(--bg2);}
 </div>
 <div id="toast"><span class="tdot"></span><span id="tmsg"></span></div>
 
+<!-- Load external libs AFTER body (non-blocking, more reliable) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.js"></script>
+<script src="https://apis.google.com/js/api.js" defer></script>
+<script src="https://accounts.google.com/gsi/client" defer></script>
+
 <script>
 // ══════════════════════════════════
-//  CONSTANTS
+//  CONFIG
 // ══════════════════════════════════
-const SB_URL  = 'https://mksnsgrlajrexkfdxjqg.supabase.co';
-const SB_KEY  = 'sb_publishable_C_Fl1V487V0RQPTtaKLI8A_7U7dtYJm';
-const MDL     = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model';
-const SCOPE   = 'https://www.googleapis.com/auth/drive.readonly';
-const IS_ADM  = location.search.includes('admin');
+const SB_URL = 'https://mksnsgrlajrexkfdxjqg.supabase.co';
+const SB_KEY = 'sb_publishable_C_Fl1V487V0RQPTtaKLI8A_7U7dtYJm';
+const MDL    = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model';
+const SCOPE  = 'https://www.googleapis.com/auth/drive.readonly';
+const IS_ADM = new URLSearchParams(location.search).has('admin');
 
 let SB;
 let CFG = { cid:'', akey:'', thr:0.5 };
-let U = { desc:null, tok:null, tc:null, loaded:false, scanning:false, results:[] };
-let A = { tok:null, tc:null, folders:[], act:[] };
+let U   = { desc:null, tok:null, tc:null, loaded:false, scanning:false, results:[] };
+let A   = { tok:null, tc:null, folders:[], act:[] };
 
 // ══════════════════════════════════
 //  UTILS
 // ══════════════════════════════════
-function showErr(msg) {
-  const b = document.getElementById('err-bar');
-  b.textContent = '⚠ ' + msg;
-  b.style.display = 'block';
-  console.error(msg);
-}
-function setMsg(m) { document.getElementById('sp-msg').textContent = m; }
-function hide(id)  { document.getElementById(id).style.display = 'none'; }
-function show(id,d){ document.getElementById(id).style.display = d||''; }
-function esc(s)    { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function setMsg(m){ document.getElementById('sp-msg').textContent = m; }
+function hide(id) { const e=document.getElementById(id); if(e) e.style.display='none'; }
+function show(id,d){ const e=document.getElementById(id); if(e) e.style.display=(d||''); }
+function esc(s)   { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 let _tt;
-function toast(msg,type){ const e=document.getElementById('toast');document.getElementById('tmsg').textContent=msg;e.className='on '+(type||'');clearTimeout(_tt);_tt=setTimeout(()=>e.className='',2800); }
+function toast(msg,type){
+  const e=document.getElementById('toast');
+  document.getElementById('tmsg').textContent=msg;
+  e.className='on '+(type||'ok');
+  clearTimeout(_tt);_tt=setTimeout(()=>e.className='',2800);
+}
 function updBtn(){ document.getElementById('scan-btn').disabled=!(U.desc&&U.tok&&document.getElementById('fsel').value); }
-function setPill(id,c,lbl){ const e=document.getElementById(id);e.className='pill '+c;e.innerHTML='<span class="dot"></span>'+lbl; }
-function setPg(p,m){ document.getElementById('pgf').style.width=p+'%';document.getElementById('pgt').textContent=m; }
-function showLog(){ document.getElementById('logb').classList.add('on'); }
-function addLog(m,t){ const b=document.getElementById('logb');b.classList.add('on');const l=document.createElement('div');l.className='ll '+(t||'');const ts=new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});l.textContent='['+ts+'] '+m;b.appendChild(l);b.scrollTop=b.scrollHeight; }
+function setPill(id,c,lbl){ const e=document.getElementById(id);if(e){e.className='pill '+c;e.innerHTML='<span class="dot"></span>'+lbl;} }
+function setPg(p,m){ document.getElementById('pgf').style.width=p+'%'; document.getElementById('pgtt').textContent=m; }
+function addLog(m,t){
+  const b=document.getElementById('logb');b.classList.add('on');
+  const l=document.createElement('div');l.className='ll '+(t||'');
+  const ts=new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  l.textContent='['+ts+'] '+m;b.appendChild(l);b.scrollTop=b.scrollHeight;
+}
+function waitFor(fn, timeout=10000){
+  return new Promise((res,rej)=>{
+    const start=Date.now();
+    const check=()=>{ if(fn()) return res(); if(Date.now()-start>timeout) return rej(new Error('Timeout waiting for: '+fn.toString().slice(0,60))); setTimeout(check,150); };
+    check();
+  });
+}
 
 // ══════════════════════════════════
-//  BOOT — called after DOM ready
+//  BOOT
 // ══════════════════════════════════
-async function boot() {
+async function boot(){
   try {
-    // Wait for supabase global (loaded in <head>)
     setMsg('Connecting to database…');
-    let tries = 0;
-    while (typeof supabase === 'undefined' && tries++ < 50) {
-      await new Promise(r => setTimeout(r, 100));
-    }
-    if (typeof supabase === 'undefined') throw new Error('Supabase failed to load. Check network/CDN.');
-
+    await waitFor(()=>typeof supabase !== 'undefined');
     SB = supabase.createClient(SB_URL, SB_KEY);
 
-    setMsg('Loading app config…');
+    setMsg('Loading config…');
     await loadCFG();
 
     setMsg('Ready!');
-    await new Promise(r => setTimeout(r, 300)); // brief pause so user sees "Ready"
+    await new Promise(r=>setTimeout(r,250));
 
     hide('init-screen');
-    if (IS_ADM) {
-      show('app-admin');
+    if(IS_ADM){
+      show('app-admin','block');
       bootAdmin();
     } else {
-      show('app-user');
+      show('app-user','block');
       bootUser();
     }
   } catch(e) {
+    hide('init-spinner');
+    const err=document.getElementById('init-err');
+    err.style.display='block';
+    err.textContent='Error: '+e.message+'\n\nCheck console for details.';
+    console.error('Boot failed:',e);
+    // Show app anyway
+    await new Promise(r=>setTimeout(r,1500));
     hide('init-screen');
-    showErr('Boot failed: ' + e.message);
-    // Show user app anyway so page isn't blank
-    if (IS_ADM) show('app-admin'); else show('app-user');
+    if(IS_ADM) show('app-admin','block'); else show('app-user','block');
   }
 }
 
-async function loadCFG() {
+async function loadCFG(){
   try {
-    const { data, error } = await SB.from('app_config').select('*');
-    if (error) { console.warn('Config:', error.message); return; }
-    (data||[]).forEach(r => {
-      if (r.key==='google_client_id') CFG.cid  = r.value;
-      if (r.key==='google_api_key')   CFG.akey = r.value;
-      if (r.key==='match_threshold')  CFG.thr  = parseFloat(r.value);
+    const {data,error}=await SB.from('app_config').select('*');
+    if(error) throw error;
+    (data||[]).forEach(r=>{
+      if(r.key==='google_client_id') CFG.cid=r.value;
+      if(r.key==='google_api_key')   CFG.akey=r.value;
+      if(r.key==='match_threshold')  CFG.thr=parseFloat(r.value)||0.5;
     });
-    if (CFG.cid)  document.getElementById('ccid').value  = CFG.cid;
-    if (CFG.akey) document.getElementById('cakey').value = CFG.akey;
-    const p = Math.round(CFG.thr*100);
-    document.getElementById('thresh').value = p;
-    document.getElementById('tv').textContent = CFG.thr.toFixed(2);
-  } catch(e) { console.warn('loadCFG:', e); }
+    if(CFG.cid)  { const e=document.getElementById('ccid');  if(e) e.value=CFG.cid; }
+    if(CFG.akey) { const e=document.getElementById('cakey'); if(e) e.value=CFG.akey; }
+    const p=Math.round(CFG.thr*100);
+    const thr=document.getElementById('thresh'); if(thr) thr.value=p;
+    const tv=document.getElementById('tv'); if(tv) tv.textContent=CFG.thr.toFixed(2);
+  } catch(e){ console.warn('loadCFG:',e); }
 }
 
-document.addEventListener('DOMContentLoaded', boot);
+window.addEventListener('load', boot);
 
 // ══════════════════════════════════
 //  USER
 // ══════════════════════════════════
-function bootUser() {
-  initUA();
+function bootUser(){
+  if(CFG.cid) initUA();
   loadFolders();
   SB.channel('frt').on('postgres_changes',{event:'*',schema:'public',table:'folders'},()=>loadFolders()).subscribe();
 }
 
-async function loadFolders() {
+async function loadFolders(){
   try {
     const {data,error}=await SB.from('folders').select('*').eq('active',true).order('created_at');
     if(error) throw error;
     const sel=document.getElementById('fsel'), nm=document.getElementById('no-fmsg');
-    if(!data||!data.length){nm.style.display='';sel.style.display='none';return;}
-    nm.style.display='none';sel.style.display='';
+    if(!data||!data.length){ nm.style.display=''; sel.style.display='none'; return; }
+    nm.style.display='none'; sel.style.display='';
     const prev=sel.value;
     sel.innerHTML='<option value="">— Choose a folder —</option>';
-    data.forEach(f=>{const o=document.createElement('option');o.value=f.folder_id;o.textContent=f.name;if(f.folder_id===prev)o.selected=true;sel.appendChild(o);});
+    data.forEach(f=>{ const o=document.createElement('option');o.value=f.folder_id;o.textContent=f.name;if(f.folder_id===prev)o.selected=true;sel.appendChild(o); });
     updBtn();
-  } catch(e){console.warn('loadFolders:',e);}
+  } catch(e){ console.warn('loadFolders:',e); }
 }
 
 function initUA(){
-  if(!CFG.cid) return;
-  try {
-    // Wait for google.accounts to be ready
-    const tryInit = () => {
-      if (typeof google !== 'undefined' && google.accounts) {
-        U.tc = google.accounts.oauth2.initTokenClient({
+  const tryInit=()=>{
+    if(typeof google!=='undefined'&&google.accounts){
+      try {
+        U.tc=google.accounts.oauth2.initTokenClient({
           client_id:CFG.cid, scope:SCOPE,
           callback:r=>{
             if(r.error){addLog('Auth error: '+r.error,'er');return;}
@@ -582,25 +607,27 @@ function initUA(){
             addLog('Drive connected.','ok'); updBtn();
           }
         });
-      } else {
-        setTimeout(tryInit, 200);
-      }
-    };
-    tryInit();
-  } catch(e){ console.warn('initUA:',e); }
+      } catch(e){ console.warn('initUA:',e); }
+    } else { setTimeout(tryInit,300); }
+  };
+  tryInit();
 }
 
 function handleAuth(){
-  if(U.tok){U.tok=null;document.getElementById('auth-btn').classList.remove('bok');document.getElementById('auth-lbl').textContent='Connect Drive';updBtn();return;}
-  if(!CFG.cid){alert('App not configured. Ask the administrator to save Google credentials.');return;}
-  if(!U.tc)initUA();
-  if(U.tc) U.tc.requestAccessToken({prompt:'consent'});
-  else alert('Google auth not ready yet, please wait a moment and try again.');
+  if(U.tok){
+    U.tok=null;
+    document.getElementById('auth-btn').classList.remove('bok');
+    document.getElementById('auth-lbl').textContent='Connect Drive';
+    updBtn(); return;
+  }
+  if(!CFG.cid){ alert('App not configured. Ask the admin to save Google credentials.'); return; }
+  if(!U.tc) initUA();
+  setTimeout(()=>{ if(U.tc) U.tc.requestAccessToken({prompt:'consent'}); else alert('Google auth not ready, try again in a moment.'); },100);
 }
 
 // ── Face API ──
 async function loadFaceAPI(){
-  if(U.loaded)return;
+  if(U.loaded) return;
   addLog('Loading face models…','in');
   if(typeof faceapi==='undefined') throw new Error('face-api.js not loaded');
   await Promise.all([
@@ -612,7 +639,7 @@ async function loadFaceAPI(){
 }
 
 // ── Upload ──
-function handleFile(e){const f=e.target.files[0];if(f)processFile(f);}
+function handleFile(e){ const f=e.target.files[0]; if(f) processFile(f); }
 const uz=document.getElementById('upz');
 uz.addEventListener('dragover',e=>{e.preventDefault();uz.classList.add('drag');});
 uz.addEventListener('dragleave',()=>uz.classList.remove('drag'));
@@ -630,12 +657,12 @@ async function processFile(file){
   img.onload=async()=>{
     const cv=document.getElementById('pcv'),ctx=cv.getContext('2d'),S=174;
     const r=Math.min(S/img.width,S/img.height),w=img.width*r,h=img.height*r,ox=(S-w)/2,oy=(S-h)/2;
-    ctx.clearRect(0,0,S,S);ctx.drawImage(img,ox,oy,w,h);
-    showLog();
-    try{
+    ctx.clearRect(0,0,S,S); ctx.drawImage(img,ox,oy,w,h);
+    document.getElementById('logb').classList.add('on');
+    try {
       await loadFaceAPI();
       const det=await faceapi.detectSingleFace(cv).withFaceLandmarks().withFaceDescriptor();
-      const oc=document.getElementById('fov').getContext('2d');oc.clearRect(0,0,S,S);
+      const oc=document.getElementById('fov').getContext('2d'); oc.clearRect(0,0,S,S);
       if(det){
         U.desc=det.descriptor;
         const b=det.detection.box,sx=w/img.width,sy=h/img.height;
@@ -646,136 +673,179 @@ async function processFile(file){
         document.getElementById('fbadge').style.display='inline-flex';
         setPill('u-st','pd','ready');
         addLog('Face descriptor extracted.','ok');
-      }else{
-        U.desc=null;document.getElementById('pfc').textContent='No face detected';
-        setPill('u-st','pe','no face');addLog('No face found — try a clearer selfie.','er');
+      } else {
+        U.desc=null; document.getElementById('pfc').textContent='No face detected';
+        setPill('u-st','pe','no face'); addLog('No face found — try a clearer selfie.','er');
       }
-    }catch(e){addLog('Error: '+e.message,'er');setPill('u-st','pe','error');}
+    } catch(e){ addLog('Error: '+e.message,'er'); setPill('u-st','pe','error'); }
     updBtn();
   };
   img.src=URL.createObjectURL(file);
 }
 
 function resetUp(){
-  U.desc=null;document.getElementById('upz').style.display='';
+  U.desc=null;
+  document.getElementById('upz').style.display='';
   document.getElementById('pwrap').classList.remove('show');
   document.getElementById('fin').value='';
-  setPill('u-st','pi','waiting');updBtn();
+  setPill('u-st','pi','waiting'); updBtn();
 }
 
 // ── Scan ──
 async function startScan(){
-  if(!U.tok||!U.desc||U.scanning)return;
+  if(!U.tok||!U.desc||U.scanning) return;
   const fid=document.getElementById('fsel').value;
-  if(!fid){alert('Please select a folder.');return;}
+  if(!fid){ alert('Please select a folder.'); return; }
   const fn=document.getElementById('fsel').selectedOptions[0].text;
-  U.scanning=true;U.results=[];
-  show('prog-sec');hide('res-sec');
-  setPg(0,'Fetching images from "'+fn+'"…');showLog();
-  try{
+  U.scanning=true; U.results=[];
+  show('prog-sec'); hide('res-sec');
+  setPg(0,'Fetching images from "'+fn+'"…');
+  try {
     const files=await driveList(fid);
     addLog('Found '+files.length+' image(s).','in');
-    if(!files.length){setPg(100,'No images in this folder.');showResults([]);U.scanning=false;return;}
+    if(!files.length){ setPg(100,'No images in this folder.'); showResults([]); U.scanning=false; return; }
     const matcher=new faceapi.FaceMatcher([new faceapi.LabeledFaceDescriptors('target',[U.desc])],CFG.thr);
     let matched=[],done=0;
     for(const f of files){
       setPg(Math.round(done/files.length*100),'Scanning '+(done+1)+'/'+files.length+': '+f.name);
-      try{
+      try {
         const burl=await driveBlob(f.id);
         const img=await iload(burl);
         const det=await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
-        if(det){const m=matcher.findBestMatch(det.descriptor);if(m.label==='target'){const c=Math.round((1-m.distance)*100);matched.push({...f,burl,c});addLog('✓ '+f.name+' ('+c+'%)','ok');}}
-      }catch(e){addLog('✗ '+f.name,'er');}
+        if(det){
+          const m=matcher.findBestMatch(det.descriptor);
+          if(m.label==='target'){ const c=Math.round((1-m.distance)*100); matched.push({...f,burl,c}); addLog('✓ '+f.name+' ('+c+'%)','ok'); }
+        }
+      } catch(e){ addLog('✗ '+f.name,'er'); }
       done++;
     }
-    matched.sort((a,b)=>b.c-a.c);U.results=matched;
+    matched.sort((a,b)=>b.c-a.c); U.results=matched;
     setPg(100,'Done — '+matched.length+' match'+(matched.length!==1?'es':'')+' found.');
-    setPill('sc-st','pd','complete');showResults(matched);
-  }catch(e){addLog('Scan failed: '+e.message,'er');setPill('sc-st','pe','error');}
+    setPill('sc-st','pd','complete'); showResults(matched);
+  } catch(e){ addLog('Scan failed: '+e.message,'er'); setPill('sc-st','pe','error'); }
   U.scanning=false;
 }
 
 async function driveList(fid){
   let files=[],pt;
-  do{const p=new URLSearchParams({q:`'${fid}' in parents and mimeType contains 'image/' and trashed=false`,fields:'nextPageToken,files(id,name,mimeType)',pageSize:'100'});if(pt)p.set('pageToken',pt);const r=await fetch('https://www.googleapis.com/drive/v3/files?'+p,{headers:{Authorization:'Bearer '+U.tok}});const d=await r.json();if(d.error)throw new Error(d.error.message);files=files.concat(d.files||[]);pt=d.nextPageToken;}while(pt);return files;
+  do {
+    const p=new URLSearchParams({q:`'${fid}' in parents and mimeType contains 'image/' and trashed=false`,fields:'nextPageToken,files(id,name,mimeType)',pageSize:'100'});
+    if(pt) p.set('pageToken',pt);
+    const r=await fetch('https://www.googleapis.com/drive/v3/files?'+p,{headers:{Authorization:'Bearer '+U.tok}});
+    const d=await r.json();
+    if(d.error) throw new Error(d.error.message);
+    files=files.concat(d.files||[]); pt=d.nextPageToken;
+  } while(pt);
+  return files;
 }
-async function driveBlob(id){const r=await fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media',{headers:{Authorization:'Bearer '+U.tok}});if(!r.ok)throw new Error('HTTP '+r.status);return URL.createObjectURL(await r.blob());}
-function iload(src){return new Promise((res,rej)=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>res(i);i.onerror=()=>rej(new Error('load'));i.src=src;});}
+async function driveBlob(id){
+  const r=await fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media',{headers:{Authorization:'Bearer '+U.tok}});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return URL.createObjectURL(await r.blob());
+}
+function iload(src){ return new Promise((res,rej)=>{ const i=new Image();i.crossOrigin='anonymous';i.onload=()=>res(i);i.onerror=()=>rej(new Error('load'));i.src=src; }); }
 
 function showResults(ms){
   show('res-sec');
   document.getElementById('rcnt').innerHTML=ms.length+' <em>match'+(ms.length!==1?'es':'')+'</em>';
-  const g=document.getElementById('rgrid');g.innerHTML='';
+  const g=document.getElementById('rgrid'); g.innerHTML='';
   document.getElementById('empst').style.display=ms.length?'none':'';
   document.getElementById('dlall').style.display=ms.length?'':'none';
-  ms.forEach((m,i)=>{const d=document.createElement('div');d.className='rc';d.innerHTML=`<div class="rcimg"><img src="${m.burl}" alt="${esc(m.name)}" loading="lazy"><span class="rcc">${m.c}%</span></div><div class="rcft"><span class="rcn" title="${esc(m.name)}">${esc(m.name)}</span><div class="rca"><button class="ib" onclick="openLb(${i})"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ib" onclick="dlF(${i})"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button></div></div>`;g.appendChild(d);});
+  ms.forEach((m,i)=>{
+    const d=document.createElement('div'); d.className='rc';
+    d.innerHTML=`<div class="rcimg"><img src="${m.burl}" alt="${esc(m.name)}" loading="lazy"><span class="rcc">${m.c}%</span></div><div class="rcft"><span class="rcn" title="${esc(m.name)}">${esc(m.name)}</span><div class="rca"><button class="ib" onclick="openLb(${i})"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ib" onclick="dlF(${i})"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button></div></div>`;
+    g.appendChild(d);
+  });
 }
-function openLb(i){const m=U.results[i];document.getElementById('lb-img').src=m.burl;document.getElementById('lb-nm').textContent=m.name;document.getElementById('lb-dl').onclick=()=>dlF(i);document.getElementById('lb').classList.add('on');}
-function closeLb(e,f){if(f||(e&&e.target===document.getElementById('lb')))document.getElementById('lb').classList.remove('on');}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLb(null,true);});
-function dlF(i){const m=U.results[i],a=document.createElement('a');a.href=m.burl;a.download=m.name;a.click();}
-function dlAll(){U.results.forEach((_,i)=>setTimeout(()=>dlF(i),i*320));}
+function openLb(i){ const m=U.results[i]; document.getElementById('lb-img').src=m.burl; document.getElementById('lb-nm').textContent=m.name; document.getElementById('lb-dl').onclick=()=>dlF(i); document.getElementById('lb').classList.add('on'); }
+function closeLb(e,f){ if(f||(e&&e.target===document.getElementById('lb'))) document.getElementById('lb').classList.remove('on'); }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeLb(null,true); });
+function dlF(i){ const m=U.results[i],a=document.createElement('a');a.href=m.burl;a.download=m.name;a.click(); }
+function dlAll(){ U.results.forEach((_,i)=>setTimeout(()=>dlF(i),i*320)); }
 
 // ══════════════════════════════════
 //  ADMIN
 // ══════════════════════════════════
 function bootAdmin(){
-  initAA();
+  if(CFG.cid) initAA();
   loadFoldersA();
   SB.channel('art').on('postgres_changes',{event:'*',schema:'public',table:'folders'},p=>{
-    const{eventType:ev,new:nw,old:od}=p;
-    if(ev==='INSERT'){A.folders.push(nw);logAct('add','Added: "'+nw.name+'"');}
-    else if(ev==='DELETE'){A.folders=A.folders.filter(f=>f.id!==od.id);logAct('remove','Removed folder');}
-    else if(ev==='UPDATE'){const i=A.folders.findIndex(f=>f.id===nw.id);if(i>-1)A.folders[i]=nw;logAct('toggle','"'+nw.name+'" → '+(nw.active?'active':'inactive'));}
+    const {eventType:ev,new:nw,old:od}=p;
+    if(ev==='INSERT')     { A.folders.push(nw); logAct('add','Added: "'+nw.name+'"'); }
+    else if(ev==='DELETE'){ A.folders=A.folders.filter(f=>f.id!==od.id); logAct('remove','Removed folder'); }
+    else if(ev==='UPDATE'){ const i=A.folders.findIndex(f=>f.id===nw.id);if(i>-1)A.folders[i]=nw; logAct('toggle','"'+nw.name+'" → '+(nw.active?'active':'inactive')); }
     renderF();
   }).subscribe();
 }
 
 async function loadFoldersA(){
-  try{const{data,error}=await SB.from('folders').select('*').order('created_at');if(error)throw error;A.folders=data||[];renderF();}
-  catch(e){toast('Load error: '+e.message,'er');}
+  try {
+    const {data,error}=await SB.from('folders').select('*').order('created_at');
+    if(error) throw error;
+    A.folders=data||[]; renderF();
+  } catch(e){ toast('Load error: '+e.message,'er'); }
 }
 
 function initAA(){
-  if(!CFG.cid)return;
   const tryInit=()=>{
     if(typeof google!=='undefined'&&google.accounts){
-      try{A.tc=google.accounts.oauth2.initTokenClient({client_id:CFG.cid,scope:SCOPE,callback:r=>{if(r.error)return;A.tok=r.access_token;document.getElementById('aauth-btn').classList.add('bok');document.getElementById('aauth-lbl').textContent='Drive connected';toast('Drive connected','ok');}});}catch(e){}
-    }else{setTimeout(tryInit,200);}
-  };tryInit();
+      try {
+        A.tc=google.accounts.oauth2.initTokenClient({
+          client_id:CFG.cid, scope:SCOPE,
+          callback:r=>{
+            if(r.error) return;
+            A.tok=r.access_token;
+            document.getElementById('aauth-btn').classList.add('bok');
+            document.getElementById('aauth-lbl').textContent='Drive connected';
+            toast('Drive connected','ok');
+          }
+        });
+      } catch(e){}
+    } else { setTimeout(tryInit,300); }
+  };
+  tryInit();
 }
 function handleAdminAuth(){
-  if(A.tok){A.tok=null;document.getElementById('aauth-btn').classList.remove('bok');document.getElementById('aauth-lbl').textContent='Connect Drive (for Picker)';return;}
-  if(!CFG.cid){toast('Save Google credentials first','er');return;}
-  if(!A.tc)initAA();
-  if(A.tc)A.tc.requestAccessToken({prompt:'consent'});
+  if(A.tok){ A.tok=null; document.getElementById('aauth-btn').classList.remove('bok'); document.getElementById('aauth-lbl').textContent='Connect Drive'; return; }
+  if(!CFG.cid){ toast('Save Google credentials first','er'); return; }
+  if(!A.tc) initAA();
+  setTimeout(()=>{ if(A.tc) A.tc.requestAccessToken({prompt:'consent'}); else toast('Google auth not ready yet, try again','er'); },100);
 }
 
 async function addFolder(){
-  const n=document.getElementById('nn').value.trim(),f=document.getElementById('nf').value.trim();
-  if(!n){toast('Enter a name','er');return;}if(!f){toast('Enter a Folder ID','er');return;}
-  if(A.folders.find(x=>x.folder_id===f)){toast('Already added','er');return;}
-  try{const{error}=await SB.from('folders').insert({name:n,folder_id:f,active:true});if(error)throw error;document.getElementById('nn').value='';document.getElementById('nf').value='';document.getElementById('apanel').classList.remove('on');toast('"'+n+'" added','ok');}
-  catch(e){toast('Error: '+e.message,'er');}
+  const n=document.getElementById('nn').value.trim(), f=document.getElementById('nf').value.trim();
+  if(!n){ toast('Enter a display name','er'); return; }
+  if(!f){ toast('Enter a Folder ID','er'); return; }
+  if(A.folders.find(x=>x.folder_id===f)){ toast('This folder is already added','er'); return; }
+  try {
+    const {error}=await SB.from('folders').insert({name:n,folder_id:f,active:true});
+    if(error) throw error;
+    document.getElementById('nn').value=''; document.getElementById('nf').value='';
+    document.getElementById('apanel').classList.remove('on');
+    toast('"'+n+'" added','ok');
+  } catch(e){ toast('Error: '+e.message,'er'); }
 }
 async function removeFolder(id,n){
-  if(!confirm('Remove "'+n+'"?'))return;
-  try{const{error}=await SB.from('folders').delete().eq('id',id);if(error)throw error;toast('Removed','ok');}
-  catch(e){toast('Error: '+e.message,'er');}
+  if(!confirm('Remove "'+n+'"?')) return;
+  try { const {error}=await SB.from('folders').delete().eq('id',id); if(error) throw error; toast('Removed','ok'); }
+  catch(e){ toast('Error: '+e.message,'er'); }
 }
 async function toggleF(id,cur){
-  try{const{error}=await SB.from('folders').update({active:!cur}).eq('id',id);if(error)throw error;}
-  catch(e){toast('Error: '+e.message,'er');}
+  try { const {error}=await SB.from('folders').update({active:!cur}).eq('id',id); if(error) throw error; }
+  catch(e){ toast('Error: '+e.message,'er'); }
 }
 
 function renderF(){
-  const tb=document.getElementById('ftbody'),tbl=document.getElementById('ftbl'),emp=document.getElementById('femp'),f=A.folders;
+  const tb=document.getElementById('ftbody'), tbl=document.getElementById('ftbl'), emp=document.getElementById('femp'), f=A.folders;
   document.getElementById('s-tot').textContent=f.length;
   document.getElementById('s-act').textContent=f.filter(x=>x.active).length;
   document.getElementById('s-ina').textContent=f.filter(x=>!x.active).length;
-  if(f.length){const d=new Date(Math.max(...f.map(x=>new Date(x.created_at)))).toLocaleDateString('en-GB',{day:'2-digit',month:'short'});document.getElementById('s-lst').textContent=d;}
-  if(!f.length){tbl.style.display='none';emp.style.display='';return;}
-  tbl.style.display='';emp.style.display='none';tb.innerHTML='';
+  if(f.length){
+    const d=new Date(Math.max(...f.map(x=>new Date(x.created_at)))).toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+    document.getElementById('s-lst').textContent=d;
+  }
+  if(!f.length){ tbl.style.display='none'; emp.style.display=''; return; }
+  tbl.style.display=''; emp.style.display='none'; tb.innerHTML='';
   f.forEach(row=>{
     const dt=new Date(row.created_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
     const sid=row.folder_id.length>18?row.folder_id.slice(0,16)+'…':row.folder_id;
@@ -786,39 +856,68 @@ function renderF(){
 }
 
 function pickFolder(){
-  if(!A.tok){toast('Connect Drive first for picker','er');return;}
+  if(!A.tok){ toast('Connect Drive first','er'); return; }
   gapi.load('picker',()=>{
     const p=new google.picker.PickerBuilder()
       .addView(new google.picker.DocsView(google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true))
       .setOAuthToken(A.tok).setDeveloperKey(CFG.akey)
-      .setCallback(d=>{if(d.action===google.picker.Action.PICKED){document.getElementById('nf').value=d.docs[0].id;document.getElementById('nn').value=d.docs[0].name;document.getElementById('apanel').classList.add('on');toast('Picked: '+d.docs[0].name,'ok');}}).build();
+      .setCallback(d=>{
+        if(d.action===google.picker.Action.PICKED){
+          document.getElementById('nf').value=d.docs[0].id;
+          document.getElementById('nn').value=d.docs[0].name;
+          document.getElementById('apanel').classList.add('on');
+          toast('Picked: '+d.docs[0].name,'ok');
+        }
+      }).build();
     p.setVisible(true);
   });
 }
 
 async function saveCreds(){
-  const cid=document.getElementById('ccid').value.trim(),ak=document.getElementById('cakey').value.trim();
-  if(!cid||!ak){toast('Fill both fields','er');return;}
-  try{await SB.from('app_config').upsert([{key:'google_client_id',value:cid},{key:'google_api_key',value:ak}],{onConflict:'key'});CFG.cid=cid;CFG.akey=ak;toast('Saved','ok');logAct('config','Credentials updated');initAA();}
-  catch(e){toast('Error: '+e.message,'er');}
+  const cid=document.getElementById('ccid').value.trim(), ak=document.getElementById('cakey').value.trim();
+  if(!cid||!ak){ toast('Fill both fields','er'); return; }
+  try {
+    await SB.from('app_config').upsert([{key:'google_client_id',value:cid},{key:'google_api_key',value:ak}],{onConflict:'key'});
+    CFG.cid=cid; CFG.akey=ak;
+    toast('Saved','ok'); logAct('config','Credentials updated'); initAA();
+  } catch(e){ toast('Error: '+e.message,'er'); }
 }
 async function saveThresh(){
   const v=(document.getElementById('thresh').value/100).toFixed(2);
-  try{await SB.from('app_config').upsert([{key:'match_threshold',value:v}],{onConflict:'key'});CFG.thr=parseFloat(v);toast('Threshold: '+v,'ok');logAct('config','Threshold → '+v);}
-  catch(e){toast('Error: '+e.message,'er');}
+  try {
+    await SB.from('app_config').upsert([{key:'match_threshold',value:v}],{onConflict:'key'});
+    CFG.thr=parseFloat(v); toast('Threshold: '+v,'ok'); logAct('config','Threshold → '+v);
+  } catch(e){ toast('Error: '+e.message,'er'); }
 }
 async function clearAll(){
-  if(!A.folders.length){toast('Nothing to clear','er');return;}
-  if(!confirm('Delete ALL '+A.folders.length+' folders?'))return;
-  try{const ids=A.folders.map(f=>f.id);const{error}=await SB.from('folders').delete().in('id',ids);if(error)throw error;toast('Cleared','ok');logAct('remove','All folders cleared');}
-  catch(e){toast('Error: '+e.message,'er');}
+  if(!A.folders.length){ toast('Nothing to clear','er'); return; }
+  if(!confirm('Delete ALL '+A.folders.length+' folders?')) return;
+  try {
+    const ids=A.folders.map(f=>f.id);
+    const {error}=await SB.from('folders').delete().in('id',ids);
+    if(error) throw error;
+    toast('Cleared','ok'); logAct('remove','All folders cleared');
+  } catch(e){ toast('Error: '+e.message,'er'); }
 }
-function exportF(){const b=new Blob([JSON.stringify(A.folders,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='facescan-folders.json';a.click();toast('Exported','ok');}
-function logAct(type,msg){A.act.unshift({type,msg,time:new Date()});renderAct();}
-function renderAct(){const el=document.getElementById('actlist');if(!A.act.length){el.innerHTML='<div style="text-align:center;padding:36px 0;color:var(--tx3);font-size:12px;">No activity yet.</div>';return;}el.innerHTML=A.act.map(a=>`<div class="ait"><div class="adot ${a.type}"></div><div><div style="color:var(--tx);font-size:12px;">${esc(a.msg)}</div><div class="atm">${a.time.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} · ${a.time.toLocaleTimeString('en',{hour12:false})}</div></div></div>`).join('');}
-function clearAct(){A.act=[];renderAct();}
-function showTab(n,el){document.querySelectorAll('.tab-s').forEach(t=>t.classList.remove('on'));document.querySelectorAll('.nv').forEach(x=>x.classList.remove('on'));document.getElementById('tab-'+n).classList.add('on');el.classList.add('on');}
-function goUser(){history.pushState({},'',location.pathname);location.reload();}
+function exportF(){
+  const b=new Blob([JSON.stringify(A.folders,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='facescan-folders.json'; a.click();
+  toast('Exported','ok');
+}
+function logAct(type,msg){ A.act.unshift({type,msg,time:new Date()}); renderAct(); }
+function renderAct(){
+  const el=document.getElementById('actlist');
+  if(!A.act.length){ el.innerHTML='<div style="text-align:center;padding:36px 0;color:var(--tx3);font-size:12px;">No activity yet.</div>'; return; }
+  el.innerHTML=A.act.map(a=>`<div class="ait"><div class="adot ${a.type}"></div><div><div style="color:var(--tx);font-size:12px;">${esc(a.msg)}</div><div class="atm">${a.time.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} · ${a.time.toLocaleTimeString('en',{hour12:false})}</div></div></div>`).join('');
+}
+function clearAct(){ A.act=[]; renderAct(); }
+function showTab(n,el){
+  document.querySelectorAll('.tab-s').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('.nv').forEach(x=>x.classList.remove('on'));
+  document.getElementById('tab-'+n).classList.add('on');
+  el.classList.add('on');
+}
+function goUser(){ history.pushState({},'',location.pathname); location.reload(); }
 </script>
 </body>
 </html>
