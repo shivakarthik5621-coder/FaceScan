@@ -601,6 +601,19 @@ async function loadFolders(){
   } catch(e){ console.warn('loadFolders:',e); }
 }
 
+function setAuthUI(connected){
+  const btn=document.getElementById('auth-btn');
+  const lbl=document.getElementById('auth-lbl');
+  if(connected){
+    btn.classList.add('bok');
+    lbl.textContent='Drive connected';
+  } else {
+    btn.classList.remove('bok');
+    lbl.textContent='Connect Drive';
+  }
+  updBtn();
+}
+
 function initUA(){
   const tryInit=()=>{
     if(typeof google!=='undefined'&&google.accounts){
@@ -608,13 +621,25 @@ function initUA(){
         U.tc=google.accounts.oauth2.initTokenClient({
           client_id:CFG.cid, scope:SCOPE,
           callback:r=>{
-            if(r.error){addLog('Auth error: '+r.error,'er');return;}
+            if(r.error){ addLog('Auth error: '+r.error,'er'); return; }
             U.tok=r.access_token;
-            document.getElementById('auth-btn').classList.add('bok');
-            document.getElementById('auth-lbl').textContent='Drive connected';
-            addLog('Drive connected.','ok'); updBtn();
+            // Persist auth flag — token itself expires but we can silently refresh
+            localStorage.setItem('fs_was_authed','1');
+            setAuthUI(true);
+            addLog('Drive connected.','ok');
+            // Auto-refresh token every 45 min (Google tokens expire after 60 min)
+            if(U._refreshTimer) clearInterval(U._refreshTimer);
+            U._refreshTimer=setInterval(()=>{
+              if(U.tc) U.tc.requestAccessToken({prompt:''});
+            }, 45*60*1000);
           }
         });
+        // Silent refresh on page load — if user was previously connected
+        // prompt:'' means no popup if session cookie still valid
+        if(localStorage.getItem('fs_was_authed')==='1'){
+          addLog('Restoring Drive session…','in');
+          U.tc.requestAccessToken({prompt:''});
+        }
       } catch(e){ console.warn('initUA:',e); }
     } else { setTimeout(tryInit,300); }
   };
@@ -623,13 +648,18 @@ function initUA(){
 
 function handleAuth(){
   if(U.tok){
+    // Disconnect
     U.tok=null;
-    document.getElementById('auth-btn').classList.remove('bok');
-    document.getElementById('auth-lbl').textContent='Connect Drive';
-    updBtn(); return;
+    localStorage.removeItem('fs_was_authed');
+    // Revoke the token so Google knows
+    if(typeof google!=='undefined'&&google.accounts&&google.accounts.oauth2)
+      google.accounts.oauth2.revoke(U.tok, ()=>{});
+    setAuthUI(false);
+    return;
   }
   if(!CFG.cid){ alert('App not configured. Ask the admin to save Google credentials.'); return; }
   if(!U.tc) initUA();
+  // prompt:'consent' forces account picker on manual connect
   setTimeout(()=>{ if(U.tc) U.tc.requestAccessToken({prompt:'consent'}); else alert('Google auth not ready, try again in a moment.'); },100);
 }
 
