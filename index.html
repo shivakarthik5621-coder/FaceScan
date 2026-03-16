@@ -427,13 +427,13 @@ select.finp option{background:var(--bg2);}
           <div class="sech"><div class="sect">Face match threshold</div></div>
           <div class="card"><div class="cb">
             <div style="max-width:360px;">
-              <div class="flbl">Match sensitivity — higher = stricter (fewer false matches)</div>
+              <div class="flbl">Match distance threshold — lower = stricter (fewer false matches)</div>
               <div style="display:flex;align-items:center;gap:13px;margin-top:8px;">
-                <input type="range" id="thresh" min="65" max="92" value="75" style="flex:1;height:3px;accent-color:var(--accent);cursor:pointer;" oninput="document.getElementById('tv').textContent=(this.value/100).toFixed(2)">
-                <span style="font-size:14px;font-weight:500;color:var(--a2);min-width:32px;" id="tv">0.75</span>
+                <input type="range" id="thresh" min="40" max="80" value="60" style="flex:1;height:3px;accent-color:var(--accent);cursor:pointer;" oninput="document.getElementById('tv').textContent=(this.value/100).toFixed(2)">
+                <span style="font-size:14px;font-weight:500;color:var(--a2);min-width:32px;" id="tv">0.60</span>
               </div>
               <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--tx3);margin-top:4px;">
-                <span>0.65 — more results</span><span>0.92 — exact matches only</span>
+                <span>0.40 — more results (looser) | 0.80 — strict (fewer false matches)</span>
               </div>
             </div>
             <button class="btn bp" style="margin-top:14px;" onclick="saveThresh()">Save threshold</button>
@@ -489,7 +489,7 @@ const SCOPE  = 'https://www.googleapis.com/auth/drive.readonly';
 const IS_ADM = new URLSearchParams(location.search).has('admin');
 
 let SB;
-let CFG = { cid:'', akey:'', thr:0.75, hfurl:'' };
+let CFG = { cid:'', akey:'', thr:0.6, hfurl:'' };
 let U   = { desc:null, tok:null, tc:null, loaded:false, scanning:false, results:[] };
 let A   = { tok:null, tc:null, folders:[], act:[] };
 
@@ -567,7 +567,7 @@ async function loadCFG(){
     (data||[]).forEach(r=>{
       if(r.key==='google_client_id') CFG.cid=r.value;
       if(r.key==='google_api_key')   CFG.akey=r.value;
-      if(r.key==='match_threshold')  CFG.thr=parseFloat(r.value)||0.75;
+      if(r.key==='match_threshold')  CFG.thr=parseFloat(r.value)||0.6;
       if(r.key==='hf_url')           { CFG.hfurl=r.value; HF_URL=r.value; }
     });
     if(CFG.cid)   { const e=document.getElementById('ccid');   if(e) e.value=CFG.cid; }
@@ -669,10 +669,19 @@ function handleAuth(){
 // ── HuggingFace Face API ──
 let HF_URL = '';
 
-function cosineSim(a, b){
-  let dot=0, na=0, nb=0;
-  for(let i=0;i<a.length;i++){ dot+=a[i]*b[i]; na+=a[i]*a[i]; nb+=b[i]*b[i]; }
-  return dot/(Math.sqrt(na)*Math.sqrt(nb));
+// Euclidean distance on L2-normalized vectors — correct metric for Facenet512
+// Lower = more similar. Same person typically 0.3–0.7, different person > 1.0
+function euclideanDist(a, b){
+  let sum = 0;
+  for(let i=0; i<a.length; i++) sum += (a[i]-b[i])**2;
+  return Math.sqrt(sum);
+}
+
+// Convert distance to a 0-100 confidence score for display
+function distToScore(dist){
+  // Facenet512 L2: 0 = identical, ~1.0 = different person
+  // Map 0→100%, 0.6→70%, 1.0→0%
+  return Math.max(0, Math.round((1 - dist/1.0)*100));
 }
 
 async function getEmbedding(imageBlob){
@@ -872,12 +881,13 @@ async function startScan(){
             results.forEach((res,i)=>{
               const {f,blob}=batch[i];
               if(res.face_found&&res.embedding){
-                const sim=cosineSim(U.desc,res.embedding);
-                if(sim>=CFG.thr){
-                  const match={...f,burl:URL.createObjectURL(blob),c:Math.round(sim*100)};
+                const dist=euclideanDist(U.desc,res.embedding);
+                const score=distToScore(dist);
+                addLog((dist<=CFG.thr?"✓":"✗")+" "+f.name+" dist="+dist.toFixed(3)+" ("+score+"%)",(dist<=CFG.thr?"ok":""));
+                if(dist<=CFG.thr){
+                  const match={...f,burl:URL.createObjectURL(blob),c:score};
                   U.results.push(match);
                   addMatchCard(match);
-                  addLog('✓ '+f.name+' ('+match.c+'%)','ok');
                 }
               }
               done++; tick();
