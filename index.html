@@ -738,10 +738,7 @@ function resetUp(){
 }
 
 // ── Scan ──
-// Pipeline: DOWNLOAD_CONCURRENCY images download in parallel
-//           while detection runs 1 at a time on GPU (sequential is actually faster for WebGL)
-//           Net effect: GPU is never idle waiting for network
-const DOWNLOAD_CONCURRENCY = 8;
+const DOWNLOAD_CONCURRENCY = 10;
 
 async function startScan(){
   if(!U.tok||!U.desc||U.scanning) return;
@@ -755,94 +752,107 @@ async function startScan(){
   document.getElementById('empst').style.display='none';
   document.getElementById('dlall').style.display='none';
   document.getElementById('rcnt').innerHTML='0 <em>matches</em>';
-  setPg(0,'Fetching file list from "'+fn+'"…');
+  setPg(0,'Fetching file list…');
 
   try {
     const files=await driveList(fid);
-    addLog('Found '+files.length+' images — starting pipelined scan…','in');
+    addLog('Found '+files.length+' images.','in');
     if(!files.length){ setPg(100,'No images in this folder.'); U.scanning=false; return; }
 
     await loadFaceAPI();
+    const matcher=new faceapi.FaceMatcher(
+      [new faceapi.LabeledFaceDescriptors('target',[U.desc])], CFG.thr
+    );
+    // Pass 1 opts: detection only, tiny input — very fast
+    const fastOpts=new faceapi.TinyFaceDetectorOptions({inputSize:160, scoreThreshold:0.5});
+    // Pass 2 opts: larger input for accurate descriptor
+    const fullOpts=new faceapi.TinyFaceDetectorOptions({inputSize:224, scoreThreshold:0.4});
 
-    const matcher=new faceapi.FaceMatcher([new faceapi.LabeledFaceDescriptors('target',[U.desc])],CFG.thr);
-    const opts=new faceapi.TinyFaceDetectorOptions({inputSize:224, scoreThreshold:0.4});
+    // ── PASS 1: detect faces only (no landmarks, no descriptor) ──
+    // Run 10 downloads in parallel, detection sequential on GPU
+    addLog('Pass 1 — fast face detection on all images…','in');
+    let p1done=0;
+    const hasFace=[]; // files that passed pass 1
+    const imgCache=new Map(); // file.id → {small224, dispBurl}
 
-    let downloaded=0, detected=0;
+    const p1Queue=[...files];
+    const p1Active=[];
 
-    // Pre-download queue: fill a buffer of decoded images ahead of detection
-    // So GPU is never waiting on network
-    const BUFFER=12; // keep up to 12 images pre-downloaded
-    const ready=[]; // {file, img} ready to detect
-    let dlIdx=0, dlActive=0, dlDone=false;
-
-    function fillDownloads(){
-      while(dlActive<DOWNLOAD_CONCURRENCY && dlIdx<files.length){
-        const f=files[dlIdx++]; dlActive++;
-        (async()=>{
-          try{
-            const burl=await driveBlob(f.id);
-            const img=await iload(burl);
+    async function p1Worker(){
+      while(p1Queue.length>0){
+        const f=p1Queue.shift();
+        try{
+          const burl=await driveBlob(f.id);
+          const img=await iload(burl);
+          // tiny 160px for fast detection
+          const tiny=resizeImg(img,160);
+          const det=await faceapi.detectSingleFace(tiny,fastOpts);
+          if(det){
+            // keep 224px version for pass 2
             const small=resizeImg(img,224);
-            // revoke full-res blob to free memory
-            URL.revokeObjectURL(burl);
-            // store a fresh blob url of the original for display
             const dispBurl=await driveBlob(f.id);
-            ready.push({f, small, dispBurl});
-            downloaded++;
-          }catch(e){
-            downloaded++;
-            addLog('✗ dl: '+f.name,'er');
+            imgCache.set(f.id,{small,dispBurl});
+            hasFace.push(f);
+            addLog('Face found in: '+f.name,'in');
           }
-          dlActive--;
-          if(dlIdx<files.length) fillDownloads();
-          else if(dlActive===0) dlDone=true;
-        })();
+          URL.revokeObjectURL(burl);
+        }catch(e){ /* skip */ }
+        p1done++;
+        setPg(
+          Math.round(p1done/files.length*50), // pass 1 = first 50% of bar
+          'Pass 1: '+p1done+'/'+files.length+' scanned · '+hasFace.length+' faces found'
+        );
       }
     }
-    fillDownloads();
 
-    // Detection loop — runs sequentially on GPU (faster than parallel for WebGL)
-    while(detected<files.length){
-      if(ready.length>0){
-        const {f,small,dispBurl}=ready.shift();
-        try{
-          const det=await faceapi.detectSingleFace(small,opts).withFaceLandmarks(true).withFaceDescriptor();
-          if(det){
-            const m=matcher.findBestMatch(det.descriptor);
-            if(m.label==='target'){
-              const c=Math.round((1-m.distance)*100);
-              const match={...f,burl:dispBurl,c};
-              U.results.push(match);
-              addMatchCard(match);
-              addLog('✓ '+f.name+' ('+c+'%)','ok');
-            } else {
-              URL.revokeObjectURL(dispBurl); // free memory for non-matches
-            }
+    // Run DOWNLOAD_CONCURRENCY workers simultaneously for pass 1
+    await Promise.all(Array.from({length:DOWNLOAD_CONCURRENCY},()=>p1Worker()));
+
+    addLog('Pass 1 done — '+hasFace.length+'/'+files.length+' images have faces. Running full match…','ok');
+
+    if(!hasFace.length){
+      setPg(100,'No faces found in any image.');
+      document.getElementById('empst').style.display='';
+      U.scanning=false; return;
+    }
+
+    // ── PASS 2: full descriptor only on face-containing images ──
+    addLog('Pass 2 — matching descriptors on '+hasFace.length+' images…','in');
+    let p2done=0;
+
+    for(const f of hasFace){
+      try{
+        const {small,dispBurl}=imgCache.get(f.id);
+        const det=await faceapi.detectSingleFace(small,fullOpts)
+          .withFaceLandmarks(true).withFaceDescriptor();
+        if(det){
+          const m=matcher.findBestMatch(det.descriptor);
+          if(m.label==='target'){
+            const c=Math.round((1-m.distance)*100);
+            const match={...f,burl:dispBurl,c};
+            U.results.push(match);
+            addMatchCard(match);
+            addLog('✓ '+f.name+' ('+c+'%)','ok');
           } else {
             URL.revokeObjectURL(dispBurl);
           }
-        }catch(e){
+        } else {
           URL.revokeObjectURL(dispBurl);
-          addLog('✗ det: '+f.name,'er');
         }
-        detected++;
-        setPg(
-          Math.round(detected/files.length*100),
-          'Scanned '+detected+'/'+files.length+' · '+U.results.length+' match'+(U.results.length!==1?'es':'')+
-          ' · '+downloaded+' pre-loaded'
-        );
-        // keep filling downloads
-        fillDownloads();
-      } else {
-        // buffer empty — wait a tick
-        await new Promise(r=>setTimeout(r,20));
-      }
+      }catch(e){ addLog('✗ '+f.name,'er'); }
+      p2done++;
+      setPg(
+        50+Math.round(p2done/hasFace.length*50), // pass 2 = second 50% of bar
+        'Pass 2: '+p2done+'/'+hasFace.length+' matched · '+U.results.length+' hit'+(U.results.length!==1?'s':'')
+      );
     }
+    imgCache.clear();
 
     setPg(100,'Done — '+U.results.length+' match'+(U.results.length!==1?'es':'')+' found.');
     setPill('sc-st','pd','complete');
     if(!U.results.length) document.getElementById('empst').style.display='';
     else document.getElementById('dlall').style.display='';
+
   } catch(e){ addLog('Scan failed: '+e.message,'er'); setPill('sc-st','pe','error'); }
   U.scanning=false;
 }
