@@ -634,8 +634,7 @@ function handleAuth(){
 }
 
 // ── HuggingFace Face API ──
-// Set this after you deploy your HF Space
-let HF_URL = ''; // e.g. https://YOUR-USERNAME-facescan-api.hf.space
+let HF_URL = '';
 
 function cosineSim(a, b){
   let dot=0, na=0, nb=0;
@@ -645,15 +644,24 @@ function cosineSim(a, b){
 
 async function getEmbedding(imageBlob){
   if(!HF_URL) throw new Error('HuggingFace API URL not set — add it in Configuration tab.');
-  const fd = new FormData();
+  const fd=new FormData();
   fd.append('file', imageBlob, 'img.jpg');
-  const r = await fetch(HF_URL+'/embed', {method:'POST', body:fd});
+  const r=await fetch(HF_URL+'/embed', {method:'POST', body:fd});
   if(!r.ok) throw new Error('HF API error: '+r.status);
-  const d = await r.json();
-  return d; // {embedding: [...512 floats] | null, face_found: bool}
+  return await r.json();
 }
 
-// Resize image blob to max px before sending — reduces upload size & API time
+// Send a batch of {id, blob} objects, get back embeddings for each
+async function batchEmbed(items){
+  if(!HF_URL) throw new Error('HuggingFace API URL not set.');
+  const fd=new FormData();
+  for(const item of items) fd.append('files', item.blob, item.id+'.jpg');
+  const r=await fetch(HF_URL+'/batch_embed', {method:'POST', body:fd});
+  if(!r.ok) throw new Error('HF batch API error: '+r.status);
+  const d=await r.json();
+  return d.results; // [{name, embedding, face_found}]
+}
+
 async function resizeBlobToJpeg(blob, maxSize=480){
   return new Promise(res=>{
     const img=new Image();
@@ -745,7 +753,9 @@ function resetUp(){
 }
 
 // ── Scan ──
-const CONCURRENCY = 12; // 12 parallel API calls to HF Space
+const P1_BATCH = 32;  // Ultra-Light is so fast we can send 32 at once
+const P2_BATCH = 8;   // Facenet512 is heavier, 8 per batch
+const DL_CONCURRENCY = 12; // parallel Drive downloads
 
 async function startScan(){
   if(!U.tok||!U.desc||U.scanning) return;
@@ -763,52 +773,115 @@ async function startScan(){
   setPg(0,'Fetching file list…');
 
   try {
-    const files=await driveList(fid);
-    addLog('Found '+files.length+' images — sending to HF API ('+CONCURRENCY+' parallel)…','in');
+    const files = await driveList(fid);
+    addLog('Found '+files.length+' images.','in');
     if(!files.length){ setPg(100,'No images in this folder.'); U.scanning=false; return; }
 
-    let done=0;
-    const queue=[...files];
+    // ── Step 1: Download all images in parallel ──
+    addLog('Downloading '+files.length+' images ('+DL_CONCURRENCY+' parallel)…','in');
+    const blobs = new Map(); // id → blob
+    let dlDone = 0;
+    const dlQueue = [...files];
 
-    async function worker(){
-      while(queue.length>0){
-        const f=queue.shift();
+    async function dlWorker(){
+      while(dlQueue.length > 0){
+        const f = dlQueue.shift();
         try {
-          // Download from Drive
-          const r=await fetch('https://www.googleapis.com/drive/v3/files/'+f.id+'?alt=media',
+          const r = await fetch('https://www.googleapis.com/drive/v3/files/'+f.id+'?alt=media',
             {headers:{Authorization:'Bearer '+U.tok}});
           if(!r.ok) throw new Error('HTTP '+r.status);
-          const blob=await r.blob();
+          blobs.set(f.id, await r.blob());
+        } catch(e){ addLog('✗ dl: '+f.name,'er'); }
+        dlDone++;
+        setPg(Math.round(dlDone/files.length*30), // downloads = first 30% of bar
+          'Downloading: '+dlDone+'/'+files.length);
+      }
+    }
+    await Promise.all(Array.from({length:DL_CONCURRENCY}, ()=>dlWorker()));
+    addLog('Downloads complete. Running face detection…','ok');
 
-          // Resize before uploading to API — saves bandwidth + time
-          const small=await resizeBlobToJpeg(blob, 480);
+    // ── Step 2: Pass 1 — Ultra-Light batch detect (find images with faces) ──
+    const hasFace = []; // files that passed
+    let p1done = 0;
 
-          // Get embedding from HF API
-          const result=await getEmbedding(small);
+    for(let i=0; i<files.length; i+=P1_BATCH){
+      const batch = files.slice(i, i+P1_BATCH).filter(f=>blobs.has(f.id));
+      if(!batch.length) continue;
 
-          if(result.face_found && result.embedding){
-            // Cosine similarity between selfie embedding and this image
-            const sim=cosineSim(U.desc, result.embedding);
+      const fd = new FormData();
+      for(const f of batch){
+        const small = await resizeBlobToJpeg(blobs.get(f.id), 320);
+        fd.append('files', small, f.id+'.jpg');
+      }
+
+      try {
+        const r = await fetch(HF_URL+'/detect_batch', {method:'POST', body:fd});
+        if(!r.ok) throw new Error('detect_batch HTTP '+r.status);
+        const {results} = await r.json();
+        results.forEach((res, idx)=>{
+          if(res.has_face) hasFace.push(batch[idx]);
+        });
+      } catch(e){
+        // On error include all in batch (don't miss matches)
+        batch.forEach(f=>hasFace.push(f));
+        addLog('Pass 1 batch error: '+e.message,'er');
+      }
+
+      p1done += batch.length;
+      setPg(30 + Math.round(p1done/files.length*30), // pass 1 = 30–60% of bar
+        'Pass 1: '+p1done+'/'+files.length+' · '+hasFace.length+' faces found');
+    }
+    addLog('Pass 1 done — '+hasFace.length+'/'+files.length+' have faces.','ok');
+
+    if(!hasFace.length){
+      setPg(100,'No faces found in folder.');
+      document.getElementById('empst').style.display='';
+      U.scanning=false; return;
+    }
+
+    // ── Step 3: Pass 2 — Facenet512 embed only face-containing images ──
+    addLog('Pass 2 — matching '+hasFace.length+' images with Facenet512…','in');
+    let p2done = 0;
+
+    for(let i=0; i<hasFace.length; i+=P2_BATCH){
+      const batch = hasFace.slice(i, i+P2_BATCH).filter(f=>blobs.has(f.id));
+      if(!batch.length) continue;
+
+      const fd = new FormData();
+      for(const f of batch){
+        const sized = await resizeBlobToJpeg(blobs.get(f.id), 480);
+        fd.append('files', sized, f.id+'.jpg');
+      }
+
+      try {
+        const r = await fetch(HF_URL+'/embed_batch', {method:'POST', body:fd});
+        if(!r.ok) throw new Error('embed_batch HTTP '+r.status);
+        const {results} = await r.json();
+        results.forEach((res, idx)=>{
+          if(res.face_found && res.embedding){
+            const sim = cosineSim(U.desc, res.embedding);
             if(sim >= (1 - CFG.thr)){
-              const c=Math.round(sim*100);
-              const dispUrl=URL.createObjectURL(blob);
-              const match={...f, burl:dispUrl, c};
+              const c = Math.round(sim*100);
+              const f = batch[idx];
+              const dispUrl = URL.createObjectURL(blobs.get(f.id));
+              const match = {...f, burl:dispUrl, c};
               U.results.push(match);
               addMatchCard(match);
               addLog('✓ '+f.name+' ('+c+'%)','ok');
             }
           }
-        } catch(e){ addLog('✗ '+f.name+': '+e.message,'er'); }
-        done++;
-        setPg(
-          Math.round(done/files.length*100),
-          'Scanned '+done+'/'+files.length+' · '+U.results.length+' match'+(U.results.length!==1?'es':'')
-        );
-      }
+        });
+      } catch(e){ addLog('Pass 2 batch error: '+e.message,'er'); }
+
+      p2done += batch.length;
+      setPg(60 + Math.round(p2done/hasFace.length*40), // pass 2 = 60–100%
+        'Pass 2: '+p2done+'/'+hasFace.length+' matched · '+U.results.length+' hit'+(U.results.length!==1?'s':''));
     }
 
-    // Run CONCURRENCY workers simultaneously
-    await Promise.all(Array.from({length:CONCURRENCY}, ()=>worker()));
+    // Free memory for unmatched blobs
+    const matchedIds = new Set(U.results.map(m=>m.id));
+    blobs.forEach((b,id)=>{ if(!matchedIds.has(id)) URL.revokeObjectURL(b); });
+    blobs.clear();
 
     setPg(100,'Done — '+U.results.length+' match'+(U.results.length!==1?'es':'')+' found.');
     setPill('sc-st','pd','complete');
