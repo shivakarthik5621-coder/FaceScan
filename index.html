@@ -1126,7 +1126,6 @@
   async function startScan() {
     const hasProbe = probeDesc || probeEncoding;
     if (!hasProbe || !driveFiles.length || !accessToken) return;
-    // Use server if available, else browser
     if (apiReady && probeEncoding) {
       await startScanServer();
     } else {
@@ -1199,68 +1198,80 @@
     const threshold = (100 - parseInt($('threshold').value)) / 100;
     scanRunning = true;
     setScanUI();
-    const timings = [], total = driveFiles.length;
+    const total = driveFiles.length;
+    const CONCURRENCY = 4; // process 4 images simultaneously
+    let completed = 0;
+    const startTime = Date.now();
 
-    for (let i = 0; i < total; i++) {
-      if (!scanRunning) break;
-      const iterStart = Date.now();
-      chip('scanDot', 'scanMsg', `Scanning ${i + 1} / ${total}…`, 'blue');
-      setProg(Math.round((i / total) * 100));
-
-      let canvas = null;
+    async function processOne(f) {
+      let objectUrl = null;
       try {
-        const f = driveFiles[i];
-        const thumbUrl = f.thumbnailLink ? f.thumbnailLink.replace(/=s\d+/, '=s256') : null;
-        canvas = await new Promise((resolve, reject) => {
-          const img = new Image(); img.crossOrigin = 'anonymous';
-          const timeout = setTimeout(() => { img.src = ''; reject(); }, 10000);
-          img.onload = () => {
-            clearTimeout(timeout);
-            const c = document.createElement('canvas');
-            const s = Math.min(1, 256 / Math.max(img.width, img.height));
-            c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
-            c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-            img.src = ''; resolve(c);
-          };
-          img.onerror = () => { clearTimeout(timeout); reject(); };
-          if (thumbUrl) { img.src = thumbUrl; }
-          else {
-            fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, {
-              headers: { Authorization: 'Bearer ' + accessToken }
-            }).then(r => r.blob()).then(blob => {
-              const u = URL.createObjectURL(blob);
-              img.onload = () => {
-                URL.revokeObjectURL(u);
-                const c = document.createElement('canvas');
-                const s = Math.min(1, 256/Math.max(img.width,img.height));
-                c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
-                c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-                img.src = ''; resolve(c);
-              };
-              img.src = u;
-            }).catch(reject);
-          }
+        const thumbUrl = f.thumbnailLink ? f.thumbnailLink.replace(/=s\d+/, '=s320') : null;
+        let blob = null;
+        if (thumbUrl) {
+          try { const r = await fetch(thumbUrl); if (r.ok) blob = await r.blob(); } catch(e) {}
+        }
+        if (!blob) {
+          const r = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, {
+            headers: { Authorization: 'Bearer ' + accessToken }
+          });
+          if (r.ok) blob = await r.blob();
+        }
+        if (!blob) return;
+
+        objectUrl = URL.createObjectURL(blob);
+        blob = null;
+
+        const img = await new Promise((resolve, reject) => {
+          const el = new Image();
+          el.onload = () => resolve(el);
+          el.onerror = reject;
+          el.src = objectUrl;
         });
+
+        const scale = Math.min(1, 320 / Math.max(img.naturalWidth, img.naturalHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.naturalWidth * scale);
+        canvas.height = Math.round(img.naturalHeight * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+
         const det = await faceapi.detectSingleFace(canvas).withFaceLandmarks().withFaceDescriptor();
+        canvas.width = 1; canvas.height = 1;
+
         if (det) {
           const dist = faceapi.euclideanDistance(probeDesc, det.descriptor);
           if (dist < threshold) {
-            const thumb = canvas.toDataURL('image/jpeg', 0.6);
-            canvas.width = 1; canvas.height = 1;
-            const r = { id: f.id, name: f.name, dist, sim: Math.max(0, 1-dist), thumb };
-            matchResults.push(r); $('statMatched').textContent = matchResults.length;
+            const r = { id: f.id, name: f.name, dist, sim: Math.max(0, 1-dist) };
+            matchResults.push(r);
+            $('statMatched').textContent = matchResults.length;
             appendResultCard(r);
           }
         }
-      } catch(e) {}
-      if (canvas) { canvas.width = 1; canvas.height = 1; }
-      timings.push(Date.now() - iterStart);
-      if (timings.length > 20) timings.shift();
-      const avg = timings.reduce((a,b) => a+b, 0) / timings.length;
-      $('statTime').textContent = formatTime(((total - i - 1) * avg) / 1000);
-      await new Promise(res => setTimeout(res, 50));
-      if ((i+1) % 20 === 0) await new Promise(res => setTimeout(res, 400));
+      } catch(e) {
+      } finally {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      }
     }
+
+    // Process with controlled concurrency
+    let idx = 0;
+    async function worker() {
+      while (idx < total && scanRunning) {
+        const f = driveFiles[idx++];
+        await processOne(f);
+        completed++;
+        setProg(Math.round((completed / total) * 100));
+        const elapsed = (Date.now() - startTime) / 1000;
+        const rate = completed / elapsed;
+        $('statTime').textContent = completed > 2 ? formatTime((total - completed) / rate) : '—';
+        chip('scanDot', 'scanMsg', `Scanning ${completed} / ${total}…`, 'blue');
+        // Small yield to keep UI responsive
+        await new Promise(res => setTimeout(res, 10));
+      }
+    }
+
+    // Launch CONCURRENCY workers in parallel
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
     finishScan();
   }
 
