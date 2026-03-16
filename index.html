@@ -735,8 +735,9 @@
   const SB_KEY     = 'sb_publishable_C_Fl1V487V0RQPTtaKLI8A_7U7dtYJm';
   const SB_HEADERS = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
   const MODEL_URL  = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+  const API_URL    = 'https://purple5621-facescan-api.hf.space';
 
-  let accessToken = null, probeDesc = null, modelsReady = false;
+  let accessToken = null, probeDesc = null, probeEncoding = null, modelsReady = false, apiReady = false;
   let driveFiles = [], matchResults = [], isAdmin = false;
   let currentFolder = '18AHvEjOny_X-BCYCg4M498LHe-Lq-CCh';
 
@@ -781,23 +782,32 @@
   }
   function setProg(p) { $('prog').style.width = p + '%'; }
   function checkReady() {
-    $('scanBtn').disabled = !(modelsReady && probeDesc && accessToken && driveFiles.length > 0);
+    const hasProbe = probeDesc || probeEncoding;
+    $('scanBtn').disabled = !(modelsReady && hasProbe && accessToken && driveFiles.length > 0);
   }
 
-  // ── MODELS ──
+  // ── MODELS + SERVER ──
   async function initAPI() {
     chip('modelDot', 'modelMsg', 'Loading face models…', 'amber');
-    try {
-      await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
-      await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-      await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
-      modelsReady = true;
-      chip('modelDot', 'modelMsg', 'Models ready', 'green');
-      checkReady();
-    } catch(e) {
+    // Load face-api models and check server health in parallel
+    const [modelsResult, serverResult] = await Promise.allSettled([
+      Promise.all([
+        faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+      ]),
+      fetch(`${API_URL}/health`).then(r => r.json())
+    ]);
+    modelsReady = modelsResult.status === 'fulfilled';
+    apiReady = serverResult.status === 'fulfilled' && serverResult.value?.status === 'ok';
+    if (modelsReady) {
+      chip('modelDot', 'modelMsg', apiReady ? 'Models + server ready' : 'Models ready (server offline)', 'green');
+    } else {
       chip('modelDot', 'modelMsg', 'Model load failed — retrying…', 'red');
       setTimeout(initAPI, 5000);
+      return;
     }
+    checkReady();
   }
 
   // ── ADMIN ──
@@ -1006,7 +1016,7 @@
     } catch(e) { chip('scanDot', 'scanMsg', 'Failed to load folder', 'red'); }
   }
 
-  // ── PROBE — browser-based face-api.js ──
+  // ── PROBE — try server first, fallback to face-api ──
   $('probeInput').addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
     const url = URL.createObjectURL(file);
@@ -1014,14 +1024,44 @@
     $('probeZone').style.display = 'none';
     $('previewWrap').style.display = 'block';
     chip('probeDot', 'probeMsg', 'Detecting face…', 'amber');
-    probeDesc = null; checkReady();
-    if (!modelsReady) { chip('probeDot', 'probeMsg', 'Models still loading — try again shortly', 'amber'); return; }
+    probeDesc = null; probeEncoding = null; checkReady();
+
+    // Always try server first (re-check health in case it came up)
+    try {
+      const healthCheck = await fetch(`${API_URL}/health`, { signal: AbortSignal.timeout(5000) });
+      const hd = await healthCheck.json();
+      if (hd.status === 'ok') {
+        apiReady = true;
+        chip('modelDot', 'modelMsg', 'Models + server ready', 'green');
+      }
+    } catch(e) { apiReady = false; }
+
+    if (apiReady) {
+      try {
+        chip('probeDot', 'probeMsg', 'Sending to server…', 'amber');
+        const form = new FormData();
+        form.append('photo', file);
+        const r = await fetch(`${API_URL}/encode-probe`, {
+          method: 'POST', body: form,
+          signal: AbortSignal.timeout(30000)
+        });
+        const d = await r.json();
+        if (!d.error) {
+          probeEncoding = d.encoding;
+          chip('probeDot', 'probeMsg', 'Face detected — ready to scan', 'green');
+          checkReady(); return;
+        }
+      } catch(e) { apiReady = false; }
+    }
+
+    // Fallback to face-api.js in browser
+    if (!modelsReady) { chip('probeDot', 'probeMsg', 'Models still loading…', 'amber'); return; }
     try {
       const img = await faceapi.fetchImage(url);
       const det = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
       if (!det) { chip('probeDot', 'probeMsg', 'No face detected — try a clearer photo', 'red'); checkReady(); return; }
       probeDesc = det.descriptor;
-      chip('probeDot', 'probeMsg', 'Face detected — ready to scan', 'green');
+      chip('probeDot', 'probeMsg', 'Face detected — ready to scan (browser mode)', 'green');
       checkReady();
     } catch(e) {
       chip('probeDot', 'probeMsg', 'Error processing photo — try again', 'red');
@@ -1081,25 +1121,85 @@
     return URL.createObjectURL(blob);
   }
 
-  let scanRunning = false;
+  let scanRunning = false, scanController = null;
 
   async function startScan() {
-    if (!probeDesc || !driveFiles.length || !accessToken) return;
+    const hasProbe = probeDesc || probeEncoding;
+    if (!hasProbe || !driveFiles.length || !accessToken) return;
+    // Use server if available, else browser
+    if (apiReady && probeEncoding) {
+      await startScanServer();
+    } else {
+      await startScanBrowser();
+    }
+  }
+
+  async function startScanServer() {
     const threshold = (100 - parseInt($('threshold').value)) / 100;
-
     scanRunning = true;
-    $('scanBtn').innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg> Stop scan';
-    $('scanBtn').onclick = stopScan;
-    $('scanBtn').disabled = false;
-    $('scanStats').style.display = 'grid';
-    $('statTime').textContent = '—';
-    $('statTimeLabel').textContent = 'Est. time remaining';
-    $('statMatched').textContent = '0';
-    setProg(0); matchResults = [];
-    initResultsArea();
+    scanController = new AbortController();
+    setScanUI();
+    chip('scanDot', 'scanMsg', 'Sending to scan server…', 'blue');
 
-    const timings = [];
-    const total = driveFiles.length;
+    try {
+      const r = await fetch(`${API_URL}/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          encoding: probeEncoding,
+          files: driveFiles.map(f => ({ id: f.id, name: f.name, thumbnailLink: f.thumbnailLink || null })),
+          access_token: accessToken,
+          threshold
+        }),
+        signal: scanController.signal
+      });
+      if (!r.ok) throw new Error(`Server error ${r.status}`);
+
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      const total = driveFiles.length;
+      const startTime = Date.now();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const msg = JSON.parse(line);
+            if (msg.type === 'heartbeat') { chip('scanDot', 'scanMsg', `Scanning…`, 'blue'); }
+            else if (msg.type === 'progress') {
+              setProg(Math.round((msg.current / total) * 100));
+              const elapsed = (Date.now() - startTime) / 1000;
+              const rate = msg.current / elapsed;
+              $('statTime').textContent = msg.current > 3 ? formatTime((total - msg.current) / rate) : '—';
+              chip('scanDot', 'scanMsg', `Scanning ${msg.current} / ${total}…`, 'blue');
+            } else if (msg.type === 'match') {
+              matchResults.push(msg);
+              $('statMatched').textContent = matchResults.length;
+              appendResultCard(msg);
+            }
+          } catch(e) {}
+        }
+      }
+    } catch(e) {
+      if (e.name !== 'AbortError') {
+        chip('scanDot', 'scanMsg', 'Server error — switching to browser scan…', 'amber');
+        await startScanBrowser();
+        return;
+      }
+    }
+    finishScan();
+  }
+
+  async function startScanBrowser() {
+    const threshold = (100 - parseInt($('threshold').value)) / 100;
+    scanRunning = true;
+    setScanUI();
+    const timings = [], total = driveFiles.length;
 
     for (let i = 0; i < total; i++) {
       if (!scanRunning) break;
@@ -1112,15 +1212,13 @@
         const f = driveFiles[i];
         const thumbUrl = f.thumbnailLink ? f.thumbnailLink.replace(/=s\d+/, '=s256') : null;
         canvas = await new Promise((resolve, reject) => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          const timeout = setTimeout(() => { img.src = ''; reject(new Error('timeout')); }, 10000);
+          const img = new Image(); img.crossOrigin = 'anonymous';
+          const timeout = setTimeout(() => { img.src = ''; reject(); }, 10000);
           img.onload = () => {
             clearTimeout(timeout);
             const c = document.createElement('canvas');
-            const scale = Math.min(1, 256 / Math.max(img.width, img.height));
-            c.width = Math.round(img.width * scale);
-            c.height = Math.round(img.height * scale);
+            const s = Math.min(1, 256 / Math.max(img.width, img.height));
+            c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
             c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
             img.src = ''; resolve(c);
           };
@@ -1131,7 +1229,14 @@
               headers: { Authorization: 'Bearer ' + accessToken }
             }).then(r => r.blob()).then(blob => {
               const u = URL.createObjectURL(blob);
-              img.onload = () => { URL.revokeObjectURL(u); const c = document.createElement('canvas'); const scale = Math.min(1, 256/Math.max(img.width,img.height)); c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale); c.getContext('2d').drawImage(img,0,0,c.width,c.height); img.src=''; resolve(c); };
+              img.onload = () => {
+                URL.revokeObjectURL(u);
+                const c = document.createElement('canvas');
+                const s = Math.min(1, 256/Math.max(img.width,img.height));
+                c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
+                c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                img.src = ''; resolve(c);
+              };
               img.src = u;
             }).catch(reject);
           }
@@ -1142,25 +1247,36 @@
           if (dist < threshold) {
             const thumb = canvas.toDataURL('image/jpeg', 0.6);
             canvas.width = 1; canvas.height = 1;
-            const r = { id: f.id, name: f.name, dist, sim: Math.max(0, 1 - dist), thumb };
-            matchResults.push(r);
-            $('statMatched').textContent = matchResults.length;
+            const r = { id: f.id, name: f.name, dist, sim: Math.max(0, 1-dist), thumb };
+            matchResults.push(r); $('statMatched').textContent = matchResults.length;
             appendResultCard(r);
           }
         }
-      } catch(e) { console.warn('skip', e); }
+      } catch(e) {}
       if (canvas) { canvas.width = 1; canvas.height = 1; }
-
       timings.push(Date.now() - iterStart);
       if (timings.length > 20) timings.shift();
-      const avg = timings.reduce((a, b) => a + b, 0) / timings.length;
+      const avg = timings.reduce((a,b) => a+b, 0) / timings.length;
       $('statTime').textContent = formatTime(((total - i - 1) * avg) / 1000);
-      // Yield to browser every photo to prevent freeze
       await new Promise(res => setTimeout(res, 50));
-      // Longer GC pause every 20 photos
-      if ((i + 1) % 20 === 0) await new Promise(res => setTimeout(res, 500));
+      if ((i+1) % 20 === 0) await new Promise(res => setTimeout(res, 400));
     }
+    finishScan();
+  }
 
+  function setScanUI() {
+    $('scanBtn').innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg> Stop scan';
+    $('scanBtn').onclick = stopScan;
+    $('scanBtn').disabled = false;
+    $('scanStats').style.display = 'grid';
+    $('statTime').textContent = '—';
+    $('statTimeLabel').textContent = 'Est. time remaining';
+    $('statMatched').textContent = '0';
+    setProg(0); matchResults = [];
+    initResultsArea();
+  }
+
+  function finishScan() {
     setProg(100);
     $('statTime').textContent = scanRunning ? 'Done' : 'Stopped';
     $('statTimeLabel').textContent = scanRunning ? 'Scan complete' : 'Scan stopped';
